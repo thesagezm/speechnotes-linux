@@ -1,0 +1,8 @@
+module CEspeakNG [system] {
+    header "/home/sagestation/.zcode/workspace/default/speechnotes-linux/ThirdParty/espeak-ng-headers/speak_lib.h"
+    // The distro ships only the versioned runtime (no -dev package and no
+    // root), so the link resolves through a user-local symlink made by
+    // Scripts/bootstrap.sh: ~/.local/lib/libespeak-ng.so → .../libespeak-ng.so.1
+    link "espeak-ng"
+    export *
+}

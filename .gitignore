@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+# Downloaded/built by Scripts/bootstrap.sh — not source.
+ThirdParty/onnxruntime-*/
+ThirdParty/piper/
+ThirdParty/piper-*/
+*.tar.gz
+*.tgz
+.DS_Store

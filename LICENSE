@@ -1,0 +1,27 @@
+GNU GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+ Speechnotes-Linux is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by the
+ Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+ The full license text is at: https://www.gnu.org/licenses/gpl-3.0.txt
+
+--------------------------------------------------------------------------
+
+Why GPL-3.0: the app links espeak-ng (GPL-3.0) and, when enabled, piper
+(GPL-3.0) — the same licensing position Speech Note (dsnote) takes with its
+espeak-ng/piper engines. MIT-licensed dependencies (SwiftCrossUI, ONNX
+Runtime) are compatible as libraries. Model weights are licensed separately:
+Kokoro and its G2P dictionaries are Apache-2.0; Supertonic's model is
+OpenRAIL-M. Those are model licenses, not code licenses, and are listed in
+the README.
