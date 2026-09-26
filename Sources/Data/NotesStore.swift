@@ -117,6 +117,8 @@ public final class NotesStore: ObservableObject {
         allNotes[index] = updated
         bumpVersion()
         rowMetadata.removeValue(forKey: note.id)
+        // Text changed — any saved playback position is stale.
+        BookmarkStore.shared.removeAll(forNote: note.id)
         scheduleSave()
     }
 
@@ -152,6 +154,7 @@ public final class NotesStore: ObservableObject {
         bumpVersion()
         rowMetadata.removeValue(forKey: noteId)
         NoteImageStore.removeAllImages(for: noteId)
+        BookmarkStore.shared.removeAll(forNote: noteId)
         NotificationCenter.default.post(name: .noteDeleted, object: noteId)
         save()
     }
@@ -164,6 +167,7 @@ public final class NotesStore: ObservableObject {
         for id in purgedIds {
             rowMetadata.removeValue(forKey: id)
             NoteImageStore.removeAllImages(for: id)
+            BookmarkStore.shared.removeAll(forNote: id)
         }
         save()
     }

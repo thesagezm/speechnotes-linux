@@ -48,6 +48,10 @@ struct NoteEditorPane: View {
                     notes.delete(noteId: note.id)
                 }
             }
+            if tts.isPlaying(noteId: note.id), let sentence = tts.currentSentence {
+                Text("▸ \(sentence)")
+                    .foregroundColor(.gray)
+            }
             TextField("Title (optional)", text: titleBinding)
             TextEditor(text: textBinding)
         }

@@ -150,21 +150,36 @@ public enum EngineFactory {
 /// Pure helpers shared by the controller and tests.
 public enum TTSChunker {
     /// Splits `text` into sentence-bounded chunks (SentenceChunker, UTF-16
-    /// coordinates preserved for the read-along clock).
-    public static func planChunks(noteId: UUID, text: String, maxChars: Int = 300) -> [SpeechChunk] {
+    /// coordinates preserved for the read-along clock). `resumeFromUTF16`
+    /// drops everything before that offset and trims the straddling chunk —
+    /// resuming playback mid-note starts at the containing sentence.
+    public static func planChunks(
+        noteId: UUID,
+        text: String,
+        maxChars: Int = 300,
+        resumeFromUTF16: Int = 0
+    ) -> [SpeechChunk] {
         let pieces = SentenceChunker.sentencePieces(in: text, maxChars: maxChars)
         guard !pieces.isEmpty else { return [] }
         let units = Array(text.utf16)
-        return pieces.enumerated().map { index, piece in
+        var chunks: [SpeechChunk] = []
+        for piece in pieces {
             let end = min(piece.endOffset, units.count)
-            return SpeechChunk(
-                noteId: noteId,
-                index: index,
-                textUTF16Offset: piece.offset,
-                textUTF16Length: max(0, end - piece.offset),
-                text: String(decoding: units[piece.offset..<end], as: UTF16.self)
+            guard end > resumeFromUTF16 else { continue }  // fully before resume
+            let start = max(piece.offset, resumeFromUTF16)
+            let body = String(decoding: units[start..<end], as: UTF16.self)
+            guard !body.isEmpty else { continue }
+            chunks.append(
+                SpeechChunk(
+                    noteId: noteId,
+                    index: chunks.count,  // renumbered — cache is cleared per run
+                    textUTF16Offset: start,
+                    textUTF16Length: end - start,
+                    text: body
+                )
             )
         }
+        return chunks
     }
 
     /// Where a chunk's WAV lives in the cache. Regenerating overwrites —

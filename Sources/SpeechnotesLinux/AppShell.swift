@@ -1,6 +1,7 @@
 import Foundation
 import SwiftCrossUI
 import Data
+import TTSEngine
 
 /// Three-column shell: destinations and notebook scopes on the left, the
 /// filtered note list in the middle, the editor on the right. The iOS app
@@ -10,16 +11,34 @@ struct AppShell: View {
     @State private var notes = NotesStore.shared
     @State private var notebooks = NotebooksStore.shared
     @State private var prefs = Prefs.shared
+    @State private var tts = TTSController.shared
 
     @State private var pane: Pane = .notes
     @State private var selectedNoteId: UUID?
     @State private var searchText = ""
     @State private var newNotebookName = ""
+    @State private var resumeCandidate: ResumeCandidate?
+
+    /// The one auto-resume offer per launch: the most recent note bookmark
+    /// saved within the last few hours whose note still exists.
+    private struct ResumeCandidate: Equatable {
+        let note: Note
+        let offset: Int
+    }
 
     enum Pane: Equatable {
         case notes
         case recycleBin
         case settings
+    }
+
+    init() {
+        if let (key, mark) = BookmarkStore.shared.mostRecentNoteBookmark(within: 6 * 3600),
+           key.hasPrefix("note:"),
+           let id = UUID(uuidString: String(key.dropFirst("note:".count))),
+           let note = NotesStore.shared.notes.first(where: { $0.id == id }) {
+            _resumeCandidate = State(wrappedValue: ResumeCandidate(note: note, offset: mark.textOffset))
+        }
     }
 
     var body: some View {
@@ -93,13 +112,34 @@ struct AppShell: View {
     @ViewBuilder
     private var middleColumn: some View {
         if pane == .notes {
-            NotesListPane(
-                notes: notes,
-                notebooks: notebooks,
-                prefs: prefs,
-                selectedNoteId: $selectedNoteId,
-                searchText: $searchText
-            )
+            VStack(spacing: 0) {
+                if let candidate = resumeCandidate {
+                    HStack(spacing: 8) {
+                        Text("Resume “\(candidate.note.title)”?")
+                        Spacer()
+                        Button("Resume") {
+                            selectedNoteId = candidate.note.id
+                            tts.play(
+                                note: candidate.note,
+                                engineKind: EngineKind(rawValue: prefs.engineKind) ?? .espeak,
+                                speed: Float(prefs.rateMultiplier),
+                                voice: prefs.voice,
+                                resumeFromUTF16: candidate.offset
+                            )
+                            resumeCandidate = nil
+                        }
+                        Button("Dismiss") { resumeCandidate = nil }
+                    }
+                    .padding(8)
+                }
+                NotesListPane(
+                    notes: notes,
+                    notebooks: notebooks,
+                    prefs: prefs,
+                    selectedNoteId: $selectedNoteId,
+                    searchText: $searchText
+                )
+            }
         } else if pane == .recycleBin {
             RecycleBinPane(notes: notes)
         } else {

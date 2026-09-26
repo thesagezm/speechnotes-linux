@@ -7,12 +7,18 @@ import Log
 /// publishes state + read-along position for the UI. One run at a time —
 /// `play` replaces whatever is playing (dsnote's queue, trimmed to what a
 /// notes app needs).
+///
+/// Bookmarks: while speaking, the audible position is throttled into
+/// BookmarkStore (note:<uuid>) so a stopped run can resume where it left
+/// off; a run that plays to the end clears its own bookmark.
 @MainActor
 public final class TTSController: ObservableObject {
     public static let shared = TTSController()
 
     @Published public private(set) var state: TTSState = .idle
     @Published public private(set) var position: PlaybackPosition?
+    /// The sentence currently sounding — the read-along strip's text.
+    @Published public private(set) var currentSentence: String?
     @Published public private(set) var lastError: String?
 
     /// Fresh flags per run: a replaced run keeps its own stopped instance,
@@ -31,16 +37,21 @@ public final class TTSController: ObservableObject {
         isBusy && playingNoteId == noteId
     }
 
-    /// Speaks a whole note. Soft-fails: engine unavailable → log + idle, the
-    /// UI is never worse than silence.
+    /// Speaks a whole note (or resumes it from a UTF-16 offset). Soft-fails:
+    /// engine unavailable → log + idle, the UI is never worse than silence.
     public func play(
         note: Note,
         engineKind: EngineKind,
         speed: Float,
-        voice: String
+        voice: String,
+        resumeFromUTF16: Int = 0
     ) {
         stop()
-        let chunks = TTSChunker.planChunks(noteId: note.id, text: note.text)
+        let chunks = TTSChunker.planChunks(
+            noteId: note.id,
+            text: note.text,
+            resumeFromUTF16: resumeFromUTF16
+        )
         guard !chunks.isEmpty else { return }
 
         let engine: TTSEngineBase
@@ -55,11 +66,16 @@ public final class TTSController: ObservableObject {
             espeak.voice = voice
         }
 
+        // Cached chunk WAVs are keyed by index; a resume renumbers chunks, so
+        // start every run from a clean cache (synthesis is cheap on this tier).
+        TTSChunker.clearCache(noteId: note.id)
+
         let flags = ControlFlags()
         self.flags = flags
         playingNoteId = note.id
         state = .speaking
         position = nil
+        currentSentence = nil
         let noteId = note.id
         worker = Task.detached(priority: .userInitiated) { [weak self] in
             await self?.runPipeline(
@@ -76,8 +92,16 @@ public final class TTSController: ObservableObject {
         flags.stop()
         worker?.cancel()
         worker = nil
+        // A manual stop keeps the position — that's what Resume plays from.
+        if let pos = position {
+            BookmarkStore.shared.set(
+                BookmarkStore.noteKey(pos.noteId),
+                PlaybackBookmark(noteId: pos.noteId, textOffset: pos.textOffset)
+            )
+        }
         state = .idle
         position = nil
+        currentSentence = nil
         playingNoteId = nil
     }
 
@@ -118,6 +142,7 @@ public final class TTSController: ObservableObject {
                 )
                 if flags.isStopped { break }
 
+                await self.setSentence(chunk.text)
                 let (samples, rate) = try WAVFile.read(at: outFile)
                 try player.play(
                     samples: samples,
@@ -133,6 +158,13 @@ public final class TTSController: ObservableObject {
                                 textOffset: offset,
                                 fraction: fraction
                             )
+                            // BookmarkStore throttles to 1 s with a
+                            // guaranteed trailing write — safe to call
+                            // on every tick.
+                            BookmarkStore.shared.set(
+                                BookmarkStore.noteKey(noteId),
+                                PlaybackBookmark(noteId: noteId, textOffset: offset)
+                            )
                         }
                     }
                 )
@@ -142,16 +174,24 @@ public final class TTSController: ObservableObject {
             }
         }
 
-        await self.pipelineDone()
+        await self.pipelineDone(noteId: noteId, clean: !flags.isStopped)
     }
 
-    /// Natural end of the queue. A stop() already reset the state; don't
-    /// resurrect it (the guard also keeps a NEW run's state intact if this
-    /// is the replaced worker limping home).
-    private func pipelineDone() {
-        guard state == .speaking || state == .paused else { return }
+    private func setSentence(_ text: String) {
+        currentSentence = text
+    }
+
+    /// Natural end of the queue. Guards on the note id so a replaced worker
+    /// limping home can't clobber a NEW run's state or bookmark.
+    private func pipelineDone(noteId: UUID, clean: Bool) {
+        guard playingNoteId == noteId else { return }
+        if clean {
+            // Played to the end — the resume bookmark served its purpose.
+            BookmarkStore.shared.removeAll(forNote: noteId)
+        }
         state = .idle
         position = nil
+        currentSentence = nil
         playingNoteId = nil
     }
 }

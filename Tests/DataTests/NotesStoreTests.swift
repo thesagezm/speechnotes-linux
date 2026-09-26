@@ -167,6 +167,22 @@ final class NotesStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testUpdateInvalidatesPlaybackBookmark() throws {
+        let home = try freshHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = AppPaths.ensureDirectories()
+        let store = freshStore()
+        let note = store.createNote()
+
+        let key = BookmarkStore.noteKey(note.id)
+        BookmarkStore.shared.set(key, PlaybackBookmark(noteId: note.id, textOffset: 42))
+        XCTAssertNotNil(BookmarkStore.shared.get(key))
+
+        store.update(note)  // text changed → saved position is stale
+        XCTAssertNil(BookmarkStore.shared.get(key))
+    }
+
+    @MainActor
     func testExpiredDeletedNotesPrunedOnInit() throws {
         let home = try freshHome()
         defer { try? FileManager.default.removeItem(at: home) }
