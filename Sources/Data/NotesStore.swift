@@ -14,12 +14,13 @@ import Log
 /// library), same debounce-then-ordered-write save dance. The only edits:
 /// Documents → AppPaths.dataDir, Log.shared → Log.
 @MainActor
-final class NotesStore: ObservableObject {
+public final class NotesStore: ObservableObject {
+    public static let shared = NotesStore()
     /// Everything, including notes sitting in the recycle bin.
-    @Published private(set) var allNotes: [Note] = []
+    @Published public private(set) var allNotes: [Note] = []
 
     /// Active notes only — what the whole UI reads as `notes.notes`.
-    var notes: [Note] { allNotes.filter { $0.deletedAt == nil } }
+    public var notes: [Note] { allNotes.filter { $0.deletedAt == nil } }
 
     /// Monotonic counter, bumped on every mutation of `allNotes`. Lets views
     /// memoize derived lists (filter + sort + section) against the store's
@@ -27,12 +28,12 @@ final class NotesStore: ObservableObject {
     /// a root environment object re-evaluates its body on every progress
     /// tick, and the list used to re-filter + re-sort the whole library on
     /// each of those invocations.
-    private(set) var version: Int = 0
+    public private(set) var version: Int = 0
 
     private func bumpVersion() { version += 1 }
 
     /// Binned notes, most recently deleted first.
-    var deletedNotes: [Note] {
+    public var deletedNotes: [Note] {
         allNotes
             .filter { $0.deletedAt != nil }
             .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
@@ -41,11 +42,11 @@ final class NotesStore: ObservableObject {
     /// Cached per-note list-row metadata (derived title, ~120-char preview,
     /// word count, listen estimate). All derived from `text` — recomputing
     /// inline on every list re-render was measurable with long notes.
-    struct RowMetadata {
-        let title: String
-        let preview: String
-        let wordCount: Int
-        let listenMinutes: Int?
+    public struct RowMetadata {
+        public let title: String
+        public let preview: String
+        public let wordCount: Int
+        public let listenMinutes: Int?
     }
 
     private var rowMetadata: [UUID: RowMetadata] = [:]
@@ -56,14 +57,14 @@ final class NotesStore: ObservableObject {
         AppPaths.dataDir.appendingPathComponent("notes.json")
     }
 
-    init() {
+    public init() {
         load()
         pruneExpiredDeleted()
         Log.info("NotesStore ready with \(notes.count) note(s), \(deletedNotes.count) in recycle bin")
     }
 
     @discardableResult
-    func createNote(notebookId: UUID? = nil) -> Note {
+    public func createNote(notebookId: UUID? = nil) -> Note {
         var note = Note()
         note.notebookId = notebookId
         allNotes.insert(note, at: 0)
@@ -73,20 +74,20 @@ final class NotesStore: ObservableObject {
     }
 
     /// Pin / favorite toggles.
-    func setPinned(_ pinned: Bool, noteId: UUID) {
+    public func setPinned(_ pinned: Bool, noteId: UUID) {
         guard let index = allNotes.firstIndex(where: { $0.id == noteId }) else { return }
         allNotes[index].isPinned = pinned
         save()
     }
 
-    func setFavorite(_ favorite: Bool, noteId: UUID) {
+    public func setFavorite(_ favorite: Bool, noteId: UUID) {
         guard let index = allNotes.firstIndex(where: { $0.id == noteId }) else { return }
         allNotes[index].isFavorite = favorite
         save()
     }
 
     /// Files a note into a notebook (nil = Unfiled).
-    func move(noteId: UUID, to notebookId: UUID?) {
+    public func move(noteId: UUID, to notebookId: UUID?) {
         guard let index = allNotes.firstIndex(where: { $0.id == noteId }) else { return }
         guard allNotes[index].notebookId != notebookId else { return }
         allNotes[index].notebookId = notebookId
@@ -95,7 +96,7 @@ final class NotesStore: ObservableObject {
     }
 
     /// After a notebook is deleted: its notes fall back to Unfiled.
-    func clearNotebook(_ notebookId: UUID) {
+    public func clearNotebook(_ notebookId: UUID) {
         var changed = false
         for index in allNotes.indices where allNotes[index].notebookId == notebookId {
             allNotes[index].notebookId = nil
@@ -105,11 +106,11 @@ final class NotesStore: ObservableObject {
     }
 
     /// Active notes in a notebook scope (nil id = Unfiled).
-    func notes(inNotebook notebookId: UUID?) -> [Note] {
+    public func notes(inNotebook notebookId: UUID?) -> [Note] {
         notes.filter { $0.notebookId == notebookId }
     }
 
-    func update(_ note: Note) {
+    public func update(_ note: Note) {
         guard let index = allNotes.firstIndex(where: { $0.id == note.id }) else { return }
         var updated = note
         updated.updatedAt = Date()
@@ -121,7 +122,7 @@ final class NotesStore: ObservableObject {
 
     /// Soft-deletes by identity — the editor's delete and the row's action
     /// both land here. The note moves to the Recycle Bin.
-    func delete(noteId: UUID) {
+    public func delete(noteId: UUID) {
         softDelete(noteId: noteId)
         save()
     }
@@ -136,7 +137,7 @@ final class NotesStore: ObservableObject {
     }
 
     /// Moves a binned note back into the active list, timestamps preserved.
-    func recover(noteId: UUID) {
+    public func recover(noteId: UUID) {
         guard let index = allNotes.firstIndex(where: { $0.id == noteId }),
               allNotes[index].deletedAt != nil else { return }
         allNotes[index].deletedAt = nil
@@ -146,7 +147,7 @@ final class NotesStore: ObservableObject {
     }
 
     /// Really deletes one binned note. No undo.
-    func purge(noteId: UUID) {
+    public func purge(noteId: UUID) {
         allNotes.removeAll { $0.id == noteId }
         bumpVersion()
         rowMetadata.removeValue(forKey: noteId)
@@ -156,7 +157,7 @@ final class NotesStore: ObservableObject {
     }
 
     /// Really deletes every binned note. No undo.
-    func emptyRecycleBin() {
+    public func emptyRecycleBin() {
         let purgedIds = allNotes.filter { $0.deletedAt != nil }.map(\.id)
         allNotes.removeAll { $0.deletedAt != nil }
         bumpVersion()
@@ -184,7 +185,7 @@ final class NotesStore: ObservableObject {
     /// First ~120 characters of the body (everything after the title line),
     /// whitespace-normalized. The scan is capped: rows re-render on every
     /// player publish, and whole-text walks were measurable with long notes.
-    func metadata(for note: Note) -> RowMetadata {
+    public func metadata(for note: Note) -> RowMetadata {
         if let cached = rowMetadata[note.id] { return cached }
         let source = note.text.count > 800 ? String(note.text.prefix(800)) : note.text
         let body = source
@@ -218,7 +219,7 @@ final class NotesStore: ObservableObject {
 
     /// Synchronous save for the moments a pending write must not be lost
     /// (window close, editor exit). Every other save is debounced.
-    func flushNow() {
+    public func flushNow() {
         saveTask?.cancel()
         saveTask = nil
         do {
@@ -233,11 +234,15 @@ final class NotesStore: ObservableObject {
         // Encoding is the expensive part — run it detached, then hop back to
         // the main actor for the write so successive saves stay ORDERED (two
         // detached writers could finish out of order and persist an older
-        // snapshot last).
+        // snapshot last). The detached closure captures only Sendable values
+        // (no self) so Swift 6 region isolation is satisfied.
         let snapshot = allNotes
         let url = fileURL
         let backupURL = backupFileURL
-        Task.detached(priority: .utility) { [weak self] in
+        savesSinceBackup += 1
+        let rotate = savesSinceBackup >= 10
+        if rotate { savesSinceBackup = 0 }
+        Task.detached(priority: .utility) {
             guard let data = try? JSONEncoder().encode(snapshot) else {
                 Log.error("Failed to encode notes for save")
                 return
@@ -245,9 +250,7 @@ final class NotesStore: ObservableObject {
             await MainActor.run {
                 do {
                     try data.write(to: url, options: .atomic)
-                    self?.savesSinceBackup += 1
-                    if (self?.savesSinceBackup ?? 0) >= 10 {
-                        self?.savesSinceBackup = 0
+                    if rotate {
                         try? data.write(to: backupURL, options: .atomic)
                     }
                 } catch {
@@ -290,5 +293,5 @@ final class NotesStore: ObservableObject {
 extension Notification.Name {
     /// Posted when a note is soft-deleted or purged (object = note UUID).
     /// SpeechPlayer stops playback if the deleted note is the live one.
-    static let noteDeleted = Notification.Name("NotesStore.noteDeleted")
+    public static let noteDeleted = Notification.Name("NotesStore.noteDeleted")
 }

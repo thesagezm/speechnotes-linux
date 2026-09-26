@@ -9,17 +9,17 @@ import Log
 /// Key names match the iOS app's UserDefaults keys verbatim so the two apps
 /// share a vocabulary.
 @MainActor
-final class Prefs: ObservableObject {
-    static let shared = Prefs()
+public final class Prefs: ObservableObject {
+    public static let shared = Prefs()
 
-    @Published var hasOnboarded: Bool { didSet { save() } }
-    @Published var activeNotebookScope: String { didSet { save() } }  // "all" or notebook UUID
-    @Published var notesSortOrder: String { didSet { save() } }        // SortOrder.rawValue
-    @Published var renderMarkdown: Bool { didSet { save() } }
-    @Published var readAlongEnabled: Bool { didSet { save() } }
-    @Published var engineKind: String { didSet { save() } }
-    @Published var voice: String { didSet { save() } }
-    @Published var rateMultiplier: Double { didSet { save() } }
+    @Published public var hasOnboarded: Bool { didSet { save() } }
+    @Published public var activeNotebookScope: String { didSet { save() } }  // "all" or notebook UUID
+    @Published public var notesSortOrder: String { didSet { save() } }        // SortOrder.rawValue
+    @Published public var renderMarkdown: Bool { didSet { save() } }
+    @Published public var readAlongEnabled: Bool { didSet { save() } }
+    @Published public var engineKind: String { didSet { save() } }
+    @Published public var voice: String { didSet { save() } }
+    @Published public var rateMultiplier: Double { didSet { save() } }
 
     private init() {
         let dict = (try? JSONSerialization.jsonObject(
@@ -53,7 +53,7 @@ final class Prefs: ObservableObject {
     }
 
     /// Synchronous write — used by the debounce timer and at shutdown.
-    func flushNow() {
+    public func flushNow() {
         saveTask?.cancel()
         saveTask = nil
         let snapshot: [String: Any] = [

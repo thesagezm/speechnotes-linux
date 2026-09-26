@@ -3,34 +3,34 @@ import SpeechLogic
 
 /// One note. Field names and semantics match the iOS app's `Note` exactly so
 /// both apps can read each other's `notes.json`.
-struct Note: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
+public struct Note: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID = UUID()
     /// User-set title. nil (or blank) → title derives from the first sentence
     /// of `text`.
-    var explicitTitle: String?
-    var text: String = ""
-    var createdAt: Date = Date()
-    var updatedAt: Date = Date()
+    public var explicitTitle: String?
+    public var text: String = ""
+    public var createdAt: Date = Date()
+    public var updatedAt: Date = Date()
     /// Recycle bin: nil = active; set = moment binned (30-day retention,
     /// iOS parity). nil for every note decoded from pre-v1.3 JSON.
-    var deletedAt: Date?
+    public var deletedAt: Date?
     /// Notebook this note is filed into (nil = Unfiled, pre-v1.4 state).
-    var notebookId: UUID?
-    var isPinned: Bool = false
-    var isFavorite: Bool = false
+    public var notebookId: UUID?
+    public var isPinned: Bool = false
+    public var isFavorite: Bool = false
 
-    static let recycleRetentionDays = 30
+    public static let recycleRetentionDays = 30
 
     enum CodingKeys: String, CodingKey {
         case id, explicitTitle, text, createdAt, updatedAt, deletedAt
         case notebookId, isPinned, isFavorite
     }
 
-    init() {}
+    public init() {}
 
     /// Decodes notes.json written by older versions (no explicitTitle /
     /// deletedAt / notebook keys) and tolerates missing fields entirely.
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         explicitTitle = try c.decodeIfPresent(String.self, forKey: .explicitTitle)
@@ -43,7 +43,7 @@ struct Note: Identifiable, Codable, Equatable {
         isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
-    var title: String {
+    public var title: String {
         if let explicit = explicitTitle?
             .trimmingCharacters(in: .whitespacesAndNewlines), !explicit.isEmpty {
             return String(explicit.prefix(120))
@@ -63,20 +63,20 @@ struct Note: Identifiable, Codable, Equatable {
     }
 
     /// Days left before this binned note is auto-purged (nil while active).
-    var recycleDaysRemaining: Int? {
+    public var recycleDaysRemaining: Int? {
         guard let deletedAt else { return nil }
         let days = Calendar.current.dateComponents([.day], from: deletedAt, to: Date()).day ?? 0
         return max(0, Note.recycleRetentionDays - days)
     }
 
     /// Whitespace-separated word count of the body (iOS VoiceCatalog parity).
-    var wordCount: Int {
+    public var wordCount: Int {
         text.split(whereSeparator: \.isWhitespace).count
     }
 
     /// Rough listening-time estimate at a spoken pace of ~145 words/minute,
     /// floored at one minute for anything non-empty.
-    var estimatedListenMinutes: Int? {
+    public var estimatedListenMinutes: Int? {
         guard wordCount > 0 else { return nil }
         return max(1, Int((Double(wordCount) / 145).rounded()))
     }

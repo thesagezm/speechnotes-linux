@@ -13,10 +13,10 @@ import Log
 /// became the free-standing `PlaybackBookmark` so the data layer doesn't
 /// depend on audio code.
 @MainActor
-final class BookmarkStore {
-    static let shared = BookmarkStore()
+public final class BookmarkStore {
+    public static let shared = BookmarkStore()
 
-    private(set) var bookmarks: [String: PlaybackBookmark] = [:]
+    public private(set) var bookmarks: [String: PlaybackBookmark] = [:]
     /// Keys touched this session, most recent first — drives LRU eviction.
     private var recency: [String] = []
 
@@ -30,22 +30,22 @@ final class BookmarkStore {
         load()
     }
 
-    static func noteKey(_ id: UUID) -> String { "note:\(id.uuidString)" }
-    static func bookKey(_ id: String, chapter: Int) -> String { "book:\(id):\(chapter)" }
+    public static func noteKey(_ id: UUID) -> String { "note:\(id.uuidString)" }
+    public static func bookKey(_ id: String, chapter: Int) -> String { "book:\(id):\(chapter)" }
 
-    func get(_ key: String) -> PlaybackBookmark? {
+    public func get(_ key: String) -> PlaybackBookmark? {
         guard let mark = bookmarks[key] else { return nil }
         touch(key)
         return mark
     }
 
-    func set(_ key: String, _ mark: PlaybackBookmark) {
+    public func set(_ key: String, _ mark: PlaybackBookmark) {
         bookmarks[key] = mark
         touch(key)
         schedulePersist()
     }
 
-    func remove(_ key: String) {
+    public func remove(_ key: String) {
         guard bookmarks[key] != nil else { return }
         bookmarks[key] = nil
         recency.removeAll { $0 == key }
@@ -54,14 +54,14 @@ final class BookmarkStore {
 
     /// Marks the slot stale without dropping other items (a note's text
     /// changed, so its bookmark can no longer match).
-    func removeAll(forNote id: UUID) {
+    public func removeAll(forNote id: UUID) {
         remove(Self.noteKey(id))
     }
 
     /// The most recent note-keyed bookmark if it was saved within `maxAge`
     /// seconds — the single auto-resume candidate when the app starts. Book
     /// bookmarks are never candidates (they resume from the reader's play).
-    func mostRecentNoteBookmark(within maxAge: TimeInterval) -> (key: String, mark: PlaybackBookmark)? {
+    public func mostRecentNoteBookmark(within maxAge: TimeInterval) -> (key: String, mark: PlaybackBookmark)? {
         guard let key = recency.first(where: { $0.hasPrefix("note:") }),
               let mark = bookmarks[key],
               mark.savedAt >= Date().addingTimeInterval(-maxAge) else { return nil }
@@ -101,7 +101,7 @@ final class BookmarkStore {
         }
     }
 
-    func persistNow() {
+    public func persistNow() {
         persistTask?.cancel()
         persistTask = nil
         do {

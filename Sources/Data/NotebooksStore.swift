@@ -12,10 +12,10 @@ import Log
 /// Ported from speechnotes-ios NotebooksStore; only Documents → AppPaths
 /// and Log.shared → Log changed.
 @MainActor
-final class NotebooksStore: ObservableObject {
-    static let shared = NotebooksStore()
+public final class NotebooksStore: ObservableObject {
+    public static let shared = NotebooksStore()
 
-    @Published private(set) var notebooks: [Notebook] = []
+    @Published public private(set) var notebooks: [Notebook] = []
 
     private static var fileURL: URL {
         AppPaths.dataDir.appendingPathComponent("notebooks.json")
@@ -28,7 +28,7 @@ final class NotebooksStore: ObservableObject {
     /// Creates a notebook with a unique, non-empty name. Returns nil (and
     /// does nothing) when the name is blank or already taken.
     @discardableResult
-    func create(name rawName: String) -> Notebook? {
+    public func create(name rawName: String) -> Notebook? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         guard !notebooks.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
@@ -42,7 +42,7 @@ final class NotebooksStore: ObservableObject {
     }
 
     /// Renames in place; blank or conflicting names are ignored.
-    func rename(_ notebook: Notebook, to rawName: String) {
+    public func rename(_ notebook: Notebook, to rawName: String) {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         guard let index = notebooks.firstIndex(where: { $0.id == notebook.id }) else { return }
@@ -55,12 +55,12 @@ final class NotebooksStore: ObservableObject {
 
     /// Removes the notebook. Notes that referenced it must be reassigned to
     /// nil (Unfiled) by the caller — see NotesStore.clearNotebook(_:).
-    func delete(_ notebook: Notebook) {
+    public func delete(_ notebook: Notebook) {
         notebooks.removeAll { $0.id == notebook.id }
         save()
     }
 
-    func name(for id: UUID?) -> String? {
+    public func name(for id: UUID?) -> String? {
         guard let id else { return nil }
         return notebooks.first(where: { $0.id == id })?.name
     }

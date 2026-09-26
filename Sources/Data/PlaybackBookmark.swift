@@ -7,14 +7,14 @@ import Foundation
 /// layer so BookmarkStore doesn't depend on audio. Offsets are UTF-16 units —
 /// SentenceChunker's coordinate space, snapped to sentence boundaries by the
 /// player when saved.
-struct PlaybackBookmark: Codable, Equatable {
-    var noteId: UUID?
-    var bookId: String?
-    var chapterIndex: Int?
-    var textOffset: Int
-    var savedAt: Date
+public struct PlaybackBookmark: Codable, Equatable, Sendable {
+    public var noteId: UUID?
+    public var bookId: String?
+    public var chapterIndex: Int?
+    public var textOffset: Int
+    public var savedAt: Date
 
-    init(noteId: UUID? = nil, bookId: String? = nil, chapterIndex: Int? = nil,
+    public init(noteId: UUID? = nil, bookId: String? = nil, chapterIndex: Int? = nil,
          textOffset: Int = 0, savedAt: Date = Date()) {
         self.noteId = noteId
         self.bookId = bookId
