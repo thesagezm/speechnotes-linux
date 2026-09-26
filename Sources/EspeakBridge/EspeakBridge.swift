@@ -134,6 +134,25 @@ public final class EspeakBridge {
         }
         return session.samples
     }
+
+    /// IPA phonemes for one text, clause by clause — Piper's phonemization
+    /// front end. Uses espeak's IPA mode (phonememode 0x02 = espeakPHONEMESIPA,
+    /// a #define the Swift importer can't see). The voice must be selected
+    /// first (setVoice); clause breaks become separate strings.
+    public func phonemes(for text: String) -> [String] {
+        var clauses: [String] = []
+        text.withCString { base in
+            var cursor: UnsafeRawPointer? = UnsafeRawPointer(base)
+            while let p = cursor?.assumingMemoryBound(to: CChar.self), p.pointee != 0 {
+                guard let ph = espeak_TextToPhonemes(&cursor, Int32(espeakCHARS_AUTO), 0x02) else {
+                    break
+                }
+                let clause = String(cString: ph).trimmingCharacters(in: .whitespaces)
+                if !clause.isEmpty { clauses.append(clause) }
+            }
+        }
+        return clauses
+    }
 }
 
 /// Per-synthesis state, passed to espeak as the callback's `user_data`.

@@ -41,6 +41,13 @@ let package = Package(
             name: "CEspeakNG",
             path: "Sources/CEspeakNG"
         ),
+        // ONNX Runtime C API — the escape hatch for piper/kokoro/supertonic.
+        // Vendored 1.30.0 header; the shared library comes from
+        // ~/.local/lib locally and /usr/local/lib on CI.
+        .systemLibrary(
+            name: "COnnxRuntime",
+            path: "Sources/COnnxRuntime"
+        ),
         // Swift bridge over libespeak-ng.
         .target(
             name: "EspeakBridge",
@@ -108,9 +115,16 @@ let package = Package(
                 .product(name: "GtkBackend", package: "swift-cross-ui", condition: .when(platforms: [.linux]))
             ],
             // espeak-ng resolves through the user-local symlink the distro's
-            // runtime-only package forces us into; CI's -dev package is on
-            // the default search path, where a missing -L dir is harmless.
-            linkerSettings: [.unsafeFlags(["-L" + homeLibDir])]
+            // runtime-only package forces us into; onnxruntime lives there
+            // too (loader needs the rpath — it's not on the default path).
+            // CI's -dev/runtime installs sit on the default search path,
+            // where a missing -L dir is harmless.
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L" + homeLibDir,
+                    "-Xlinker", "-rpath", "-Xlinker", homeLibDir,
+                ])
+            ]
         ),
         // TTS tier: dsnote engine contract, eSpeak tier, ALSA player.
         .target(
@@ -119,6 +133,7 @@ let package = Package(
                 "Data",
                 "SpeechLogic",
                 "EspeakBridge",
+                "COnnxRuntime",
                 "AlsaSink",
                 "AppPaths",
                 "Log",
@@ -128,7 +143,12 @@ let package = Package(
         .testTarget(
             name: "TTSEngineTests",
             dependencies: ["TTSEngine", "AppPaths"],
-            linkerSettings: [.unsafeFlags(["-L" + homeLibDir])]
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L" + homeLibDir,
+                    "-Xlinker", "-rpath", "-Xlinker", homeLibDir,
+                ])
+            ]
         ),
         // Note/notebook/prefs stores, ported from the iOS app (Phase 2).
         // Depends on SwiftCrossUI because ObservableObject/@Published live

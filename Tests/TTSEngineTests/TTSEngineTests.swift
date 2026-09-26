@@ -85,6 +85,51 @@ final class TTSEngineTests: XCTestCase {
         XCTAssertNoThrow(try EngineFactory.make(kind: .espeak))
     }
 
+    /// Proves the shared library loads and the vendored header's ABI
+    /// matches the installed runtime, without needing a model.
+    func testOnnxRuntimeCAPILoads() throws {
+        try OrtRuntime.smokeTest()
+    }
+
+    func testPiperPhonemeIdSequence() {
+        let map = ["^": [1], "$": [2], "_": [0], "a": [10], "b": [11, 12]]
+        let ids = PiperEngine.phonemeIds(from: ["ab"], map: map)
+        // piper-phonemize pads once per SYMBOL, then all of the symbol's ids:
+        // BOS, PAD+10, PAD+(11,12), PAD, EOS
+        XCTAssertEqual(ids, [1, 0, 10, 0, 11, 12, 0, 2])
+        // Unknown symbols (stress marks) drop silently.
+        XCTAssertEqual(PiperEngine.phonemeIds(from: ["ˈa"], map: map), [1, 0, 10, 0, 2])
+    }
+
+    /// Full Piper path — skipped unless a voice is installed
+    /// (Settings → download, or PiperModelManager.download()).
+    func testPiperSynthesisIfVoiceInstalled() throws {
+        guard let voice = PiperModelManager.installedVoices().first else {
+            throw XCTSkip("no piper voice installed")
+        }
+        let engine = PiperEngine()
+        XCTAssertTrue(
+            engine.createModel(
+                modelPath: PiperModelManager.modelDirectory(for: voice).path,
+                modelId: voice
+            )
+        )
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("piper-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let rate = try engine.encodeSpeechImpl(
+            text: "Hello from Piper.",
+            speed: 1.0,
+            outFile: url,
+            abort: { false }
+        )
+        XCTAssertGreaterThan(rate, 0)
+        let (samples, wavRate) = try WAVFile.read(at: url)
+        XCTAssertEqual(wavRate, rate)
+        XCTAssertFalse(samples.isEmpty)
+    }
+
     /// The real eSpeak path end to end: synth in retrieval mode, WAV on
     /// disk, parseable back. Uses the default voice; no ALSA involved.
     func testEspeakEngineWritesPlayableWAV() throws {

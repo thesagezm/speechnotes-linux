@@ -141,7 +141,16 @@ public enum EngineFactory {
     public static func make(kind: EngineKind) throws -> TTSEngineBase {
         switch kind {
         case .espeak: return EspeakEngine()
-        case .pico, .piper, .kokoro, .supertonic:
+        case .piper:
+            let engine = PiperEngine()
+            if let voice = PiperModelManager.installedVoices().first {
+                _ = engine.createModel(
+                    modelPath: PiperModelManager.modelDirectory(for: voice).path,
+                    modelId: voice
+                )
+            }
+            return engine
+        case .pico, .kokoro, .supertonic:
             throw TTSError.engineNotAvailable(kind)
         }
     }

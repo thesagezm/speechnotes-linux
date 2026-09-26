@@ -62,6 +62,11 @@ public final class TTSController: ObservableObject {
             Log.error("TTS: \(lastError ?? "?")")
             return
         }
+        if !engine.modelCreated() {
+            lastError = "\(engineKind.displayName) is not ready — no model (Settings → download a voice)"
+            Log.error("TTS: \(lastError ?? "?")")
+            return
+        }
         if let espeak = engine as? EspeakEngine {
             espeak.voice = voice
         }

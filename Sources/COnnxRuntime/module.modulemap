@@ -1,0 +1,8 @@
+module COnnxRuntime [system] {
+    header "onnxruntime_shim.h"
+    // Local builds link through ~/.local/lib (bootstrap symlinks + -L/rpath
+    // on every linking target); CI installs the same release into
+    // /usr/local/lib and runs ldconfig.
+    link "onnxruntime"
+    export *
+}

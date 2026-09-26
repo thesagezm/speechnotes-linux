@@ -28,6 +28,16 @@ jobs:
             libgtk-4-dev libasound2-dev libespeak-ng-dev zlib1g-dev \
             pkg-config
 
+      - name: Install ONNX Runtime 1.30.0 (piper/kokoro/supertonic tier)
+        run: |
+          curl -fsSL -o /tmp/ort.tgz \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-linux-x64-1.30.0.tgz
+          mkdir -p /tmp/ort && tar xzf /tmp/ort.tgz -C /tmp/ort
+          sudo cp /tmp/ort/onnxruntime-linux-x64-1.30.0/lib/libonnxruntime.so.1.30.0 /usr/local/lib/
+          sudo ln -sf libonnxruntime.so.1.30.0 /usr/local/lib/libonnxruntime.so.1
+          sudo ln -sf libonnxruntime.so.1.30.0 /usr/local/lib/libonnxruntime.so
+          sudo ldconfig
+
       - name: Install Swift via swiftly
         run: |
           curl -fsSL -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz

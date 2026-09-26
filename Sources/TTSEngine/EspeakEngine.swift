@@ -5,7 +5,7 @@ import Log
 /// The instant tier: eSpeak-NG through the retrieval-mode bridge. No model
 /// files, ~131 voices, synthesis in tens of milliseconds per sentence —
 /// the always-available fallback the whole tier degrades to.
-public final class EspeakEngine: TTSEngineBase {
+public final class EspeakEngine: TTSEngineBase, @unchecked Sendable {
     private let bridge = EspeakBridge()
     private var initialized = false
     private var appliedVoice = ""
