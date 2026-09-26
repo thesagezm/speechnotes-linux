@@ -99,13 +99,36 @@ let package = Package(
             dependencies: [
                 "SpeechLogic",
                 "Data",
+                "TTSEngine",
                 "CALSA",
                 "AlsaSink",
                 "Log",
                 "AppPaths",
                 .product(name: "SwiftCrossUI", package: "swift-cross-ui"),
                 .product(name: "GtkBackend", package: "swift-cross-ui", condition: .when(platforms: [.linux]))
+            ],
+            // espeak-ng resolves through the user-local symlink the distro's
+            // runtime-only package forces us into; CI's -dev package is on
+            // the default search path, where a missing -L dir is harmless.
+            linkerSettings: [.unsafeFlags(["-L" + homeLibDir])]
+        ),
+        // TTS tier: dsnote engine contract, eSpeak tier, ALSA player.
+        .target(
+            name: "TTSEngine",
+            dependencies: [
+                "Data",
+                "SpeechLogic",
+                "EspeakBridge",
+                "AlsaSink",
+                "AppPaths",
+                "Log",
+                .product(name: "SwiftCrossUI", package: "swift-cross-ui")
             ]
+        ),
+        .testTarget(
+            name: "TTSEngineTests",
+            dependencies: ["TTSEngine", "AppPaths"],
+            linkerSettings: [.unsafeFlags(["-L" + homeLibDir])]
         ),
         // Note/notebook/prefs stores, ported from the iOS app (Phase 2).
         // Depends on SwiftCrossUI because ObservableObject/@Published live

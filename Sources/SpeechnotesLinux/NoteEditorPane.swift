@@ -1,14 +1,19 @@
 import Foundation
 import SwiftCrossUI
 import Data
+import TTSEngine
 
-/// The note editor: optional explicit title, the body TextEditor, and the
-/// pin/star/delete controls. SwiftCrossUI's TextEditor is a plain
-/// Binding<String> (no attributed ranges), so formatting flows into the text
-/// at the end — same constraint the plan recorded for dsnote parity.
+/// The note editor: optional explicit title, the body TextEditor, the
+/// pin/star/delete controls, and the speak bar driving the TTS tier.
+/// SwiftCrossUI's TextEditor is a plain Binding<String> (no attributed
+/// ranges), so formatting flows into the text at the end — same constraint
+/// the plan recorded for dsnote parity.
 struct NoteEditorPane: View {
     let note: Note
     let notes: NotesStore
+
+    @State private var tts = TTSController.shared
+    @State private var prefs = Prefs.shared
 
     var body: some View {
         VStack(spacing: 8) {
@@ -20,8 +25,26 @@ struct NoteEditorPane: View {
                     notes.setFavorite(!note.isFavorite, noteId: note.id)
                 }
                 Spacer()
-                Text(summary)
+                Text(progressText)
+                if tts.isPlaying(noteId: note.id) {
+                    if tts.state == .paused {
+                        Button("▶ Resume") { tts.resume() }
+                    } else {
+                        Button("❙❙ Pause") { tts.pause() }
+                    }
+                    Button("■ Stop") { tts.stop() }
+                } else {
+                    Button("▶ Speak") {
+                        tts.play(
+                            note: note,
+                            engineKind: EngineKind(rawValue: prefs.engineKind) ?? .espeak,
+                            speed: Float(prefs.rateMultiplier),
+                            voice: prefs.voice
+                        )
+                    }
+                }
                 Button("Delete") {
+                    tts.stop()
                     notes.delete(noteId: note.id)
                 }
             }
@@ -31,10 +54,16 @@ struct NoteEditorPane: View {
         .padding(8)
     }
 
-    private var summary: String {
+    private var progressText: String {
         var parts = ["\(note.wordCount) words"]
         if let minutes = note.estimatedListenMinutes {
             parts.append("~\(minutes) min listen")
+        }
+        if let pos = tts.position, pos.noteId == note.id {
+            parts.append("\(Int((pos.fraction * 100).rounded()))%")
+        }
+        if let error = tts.lastError {
+            parts.append("last TTS error: \(error)")
         }
         return parts.joined(separator: " · ")
     }
