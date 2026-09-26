@@ -1,0 +1,66 @@
+name: Build & Test (Linux)
+
+# Same shape as the iOS workflow: every push proves the tree compiles and
+# the SpeechLogic suite stays green. Linux runners, GTK4 + ALSA + espeak-ng
+# from apt, toolchain via swiftly.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build + SpeechLogic tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native deps (GTK4, ALSA, espeak-ng, zlib)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libasound2-dev libespeak-ng-dev zlib1g-dev \
+            pkg-config
+
+      - name: Install Swift via swiftly
+        run: |
+          curl -fsSL -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz
+          tar zxf swiftly-$(uname -m).tar.gz
+          ./swiftly init --no-modify-profile --skip-install --assume-yes
+          export PATH="$HOME/.local/share/swiftly/bin:$PATH"
+          swiftly install 6.4.0 --assume-yes || swiftly install latest --assume-yes
+
+      - name: Build
+        run: |
+          export PATH="$HOME/.local/share/swiftly/bin:$PATH"
+          swift build 2>&1 | tee build.log
+
+      - name: Test
+        run: |
+          export PATH="$HOME/.local/share/swiftly/bin:$PATH"
+          set -o pipefail
+          swift test 2>&1 | tee test.log
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          { grep -E "error:|failed|XCTAssert" build.log test.log || true; } | tail -n 40 > summary.txt
+          echo "----- FAILURE SUMMARY -----"
+          cat summary.txt
+          python3 -c "import pathlib; t=pathlib.Path('summary.txt').read_text()[:5500]; print('::error title=Build failure::'+t.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build.log
+            test.log
+          if-no-files-found: warn

@@ -98,6 +98,7 @@ let package = Package(
             name: "SpeechnotesLinux",
             dependencies: [
                 "SpeechLogic",
+                "Data",
                 "CALSA",
                 "AlsaSink",
                 "Log",
@@ -105,6 +106,22 @@ let package = Package(
                 .product(name: "SwiftCrossUI", package: "swift-cross-ui"),
                 .product(name: "GtkBackend", package: "swift-cross-ui", condition: .when(platforms: [.linux]))
             ]
+        ),
+        // Note/notebook/prefs stores, ported from the iOS app (Phase 2).
+        // Depends on SwiftCrossUI because ObservableObject/@Published live
+        // there on Linux (there is no Combine).
+        .target(
+            name: "Data",
+            dependencies: [
+                "AppPaths",
+                "SpeechLogic",
+                "Log",
+                .product(name: "SwiftCrossUI", package: "swift-cross-ui")
+            ]
+        ),
+        .testTarget(
+            name: "DataTests",
+            dependencies: ["Data", "AppPaths"]
         )
     ]
 )
