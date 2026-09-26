@@ -35,8 +35,14 @@ jobs:
           mkdir -p /tmp/ort && tar xzf /tmp/ort.tgz -C /tmp/ort
           sudo cp /tmp/ort/onnxruntime-linux-x64-1.30.0/lib/libonnxruntime.so.1.30.0 /usr/local/lib/
           sudo ln -sf libonnxruntime.so.1.30.0 /usr/local/lib/libonnxruntime.so.1
-          sudo ln -sf libonnxruntime.so.1.30.0 /usr/local/lib/libonnxruntime.so
+          # The build's linkerSettings carry -L $HOME/.local/lib on every
+          # linking target for the local (no-root) layout; make that path
+          # resolve on the runner too instead of teaching the manifest the
+          # difference.
+          mkdir -p "$HOME/.local/lib"
+          ln -sf /usr/local/lib/libonnxruntime.so.1.30.0 "$HOME/.local/lib/libonnxruntime.so"
           sudo ldconfig
+          echo "LD_LIBRARY_PATH=/usr/local/lib" >> "$GITHUB_ENV"
 
       - name: Install Swift via swiftly
         run: |
