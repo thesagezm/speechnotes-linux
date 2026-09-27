@@ -3,6 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 import EspeakBridge
+import COnnxRuntime
 import AppPaths
 import Log
 
@@ -28,7 +29,7 @@ struct PiperVoiceConfig: Decodable {
 /// quality than eSpeak at still-responsive speeds.
 public final class PiperEngine: TTSEngineBase, @unchecked Sendable {
     private let bridge = EspeakBridge()
-    private var model: OrtModel?
+    private var model: OrtSessionRef?
     private var config: PiperVoiceConfig?
     private var loadedVoice = ""
 
@@ -45,9 +46,8 @@ public final class PiperEngine: TTSEngineBase, @unchecked Sendable {
                 PiperVoiceConfig.self,
                 from: Data(contentsOf: dir.appendingPathComponent("\(modelId).onnx.json"))
             )
-            let ort = try OrtModel(
-                modelPath: dir.appendingPathComponent("\(modelId).onnx").path,
-                withSpeakerId: (cfg.num_speakers ?? 1) > 1
+            let ort = try OrtSessionRef(
+                modelPath: dir.appendingPathComponent("\(modelId).onnx").path
             )
             try bridge.initialize()
             if let espeakVoice = cfg.espeak?.voice, !espeakVoice.isEmpty {
@@ -92,7 +92,19 @@ public final class PiperEngine: TTSEngineBase, @unchecked Sendable {
             scales.append(Float(noiseW))
         }
 
-        let wave = try model.synthesize(inputIds: ids, scales: scales, speakerId: 0)
+        var tensors: [String: OrtValueRef] = [
+            "input": try OrtValueRef(tensorData: ids, shape: [1, Int64(ids.count)], elementType: OrtElementType.int64),
+            "input_lengths": try OrtValueRef(tensorData: [Int64(ids.count)], shape: [1], elementType: OrtElementType.int64),
+            "scales": try OrtValueRef(tensorData: scales, shape: [Int64(scales.count)], elementType: OrtElementType.float),
+        ]
+        if model.outputNames.contains("sid") || (config.num_speakers ?? 1) > 1 {
+            tensors["sid"] = try OrtValueRef(tensorData: [Int64(0)], shape: [1], elementType: OrtElementType.int64)
+        }
+        let outputs = try model.run(inputs: tensors, outputNames: nil)
+        let outputName = model.outputNames.first ?? "output"
+        guard let wave = try outputs[outputName]?.tensorData() as [Float]?, !wave.isEmpty else {
+            throw TTSError.synthesisFailed("piper model produced no audio")
+        }
         guard !abort() else { return config.audio.sample_rate }
         guard !wave.isEmpty else {
             throw TTSError.synthesisFailed("piper produced no audio")

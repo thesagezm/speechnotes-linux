@@ -150,7 +150,16 @@ public enum EngineFactory {
                 )
             }
             return engine
-        case .pico, .kokoro, .supertonic:
+        case .kokoro:
+            let engine = KokoroEngine()
+            if KokoroModelManager.modelFilesAreValid() {
+                _ = engine.createModel(
+                    modelPath: KokoroModelManager.modelDirectory.path,
+                    modelId: KokoroModelManager.curatedVoice
+                )
+            }
+            return engine
+        case .pico, .supertonic:
             throw TTSError.engineNotAvailable(kind)
         }
     }
