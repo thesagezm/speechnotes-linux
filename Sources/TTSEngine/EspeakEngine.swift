@@ -6,6 +6,12 @@ import Log
 /// files, ~131 voices, synthesis in tens of milliseconds per sentence —
 /// the always-available fallback the whole tier degrades to.
 public final class EspeakEngine: TTSEngineBase, @unchecked Sendable {
+    /// Exposed for tests that assert on the phonemization contract.
+    func bridgeForTesting() -> EspeakBridge? {
+        try? ensureInitialized()
+        return bridge
+    }
+
     private let bridge = EspeakBridge()
     private var initialized = false
     private var appliedVoice = ""

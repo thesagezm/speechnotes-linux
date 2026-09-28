@@ -91,9 +91,15 @@ public final class EspeakBridge {
     }
 
     /// Selects a voice by its espeak name (e.g. "english", "en-us").
+    /// Last voice this bridge applied (used by phonemes() to guarantee the
+    /// library has a voice selected — TextToPhonemes requires it).
+    private var appliedVoice: String?
+
     @discardableResult
     public func setVoice(_ name: String) -> Bool {
-        espeak_SetVoiceByName(name) == EE_OK
+        let ok = espeak_SetVoiceByName(name) == EE_OK
+        if ok { appliedVoice = name }
+        return ok
     }
 
     /// Speaking rate in words per minute (80…450).
@@ -135,20 +141,34 @@ public final class EspeakBridge {
         return session.samples
     }
 
-    /// IPA phonemes for one text, clause by clause — Piper's phonemization
-    /// front end. Uses espeak's IPA mode (phonememode 0x02 = espeakPHONEMESIPA,
-    /// a #define the Swift importer can't see). The voice must be selected
-    /// first (setVoice); clause breaks become separate strings.
+    /// IPA phonemes for one text, clause by clause — the phonemization
+    /// front end for Piper/Kokoro. espeak advances the pointer past each
+    /// translated clause and returns its phonemes; NULL means end of text.
+    /// The library requires BOTH an initialization and a selected voice
+    /// before the first TextToPhonemes call (the latter segfaults without
+    /// it), so this self-initializes and falls back to en-us when the
+    /// caller hasn't selected one.
     public func phonemes(for text: String) -> [String] {
+        if sampleRate <= 0 {
+            try? initialize()
+        }
+        if appliedVoice == nil {
+            _ = setVoice("en-us")  // any voice; the caller overrides before speaking
+        }
         var clauses: [String] = []
         text.withCString { base in
             var cursor: UnsafeRawPointer? = UnsafeRawPointer(base)
-            while let p = cursor?.assumingMemoryBound(to: CChar.self), p.pointee != 0 {
+            while let current = cursor {
+                // espeak returns one clause's phonemes at a time and
+                // advances `cursor`, setting it NULL at end of text.
                 guard let ph = espeak_TextToPhonemes(&cursor, Int32(espeakCHARS_AUTO), 0x02) else {
                     break
                 }
                 let clause = String(cString: ph).trimmingCharacters(in: .whitespaces)
-                if !clause.isEmpty { clauses.append(clause) }
+                if clause.isEmpty { break }
+                clauses.append(clause)
+                if cursor == current { break }  // no progress — stop
+                if cursor == nil { break }      // end of text (documented)
             }
         }
         return clauses

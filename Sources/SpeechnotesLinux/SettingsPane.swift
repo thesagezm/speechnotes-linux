@@ -21,10 +21,11 @@ struct SettingsPane: View {
             }
             HStack(spacing: 8) {
                 Button("Engine: \(EngineKind(rawValue: prefs.engineKind)?.displayName ?? prefs.engineKind)") {
-                    prefs.engineKind =
-                        prefs.engineKind == EngineKind.espeak.rawValue
-                        ? EngineKind.piper.rawValue
-                        : EngineKind.espeak.rawValue
+                    switch EngineKind(rawValue: prefs.engineKind) {
+                    case .espeak: prefs.engineKind = EngineKind.piper.rawValue
+                    case .piper: prefs.engineKind = EngineKind.kokoro.rawValue
+                    default: prefs.engineKind = EngineKind.espeak.rawValue
+                    }
                 }
                 Spacer()
             }
@@ -41,6 +42,20 @@ struct SettingsPane: View {
                     Task { @MainActor in
                         do {
                             _ = try await PiperModelManager.download()
+                            piperStatus = "installed ✓"
+                        } catch {
+                            piperStatus = "failed: \(error)"
+                        }
+                    }
+                }
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                Button("Download Kokoro (82M, ~190 MB)") {
+                    piperStatus = "downloading Kokoro…"
+                    Task { @MainActor in
+                        do {
+                            _ = try await KokoroModelManager.download()
                             piperStatus = "installed ✓"
                         } catch {
                             piperStatus = "failed: \(error)"

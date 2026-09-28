@@ -1,6 +1,5 @@
 import COnnxRuntime
 import Foundation
-import Log
 
 /// C enum cases don't import as Swift members — the pipeline spells them out.
 enum OrtElementType {
@@ -41,12 +40,23 @@ enum OrtRuntime {
     }
 }
 
-/// A generic tensor value over the C API: shape + element type + borrowed
-/// caller memory, exactly what `CreateTensorWithDataAsOrtValue` wants
-/// (the buffer must outlive the copy into the session's arena — the
-/// pipeline holds the source arrays for the duration of the call).
+/// A generic tensor value over the C API: shape + element type + owned
+/// memory. `CreateTensorWithDataAsOrtValue` does not copy the caller's
+/// bytes — the buffer must outlive the OrtValue itself, so this class owns
+/// a private copy instead of borrowing caller storage.
 final class OrtValueRef: @unchecked Sendable {
     private let value: UnsafeMutablePointer<OrtValue>
+    /// The element type this value was created with — tensorData() reads back
+    /// a byte-exact Array<Float> or Array<Int64> from it.
+    private let elementType: ONNXTensorElementDataType
+    /// Kept alive for the value's lifetime (the C API requires the memory
+    /// info to outlive tensors that reference it).
+    private var memoryInfo: UnsafeMutablePointer<OrtMemoryInfo>?
+    /// The tensor's bytes, owned for the OrtValue's lifetime (the C API
+    /// requires the buffer to outlive the value; a scoped caller array can
+    /// be released by ARC before Run reads it, which surfaces as garbage
+    /// shapes and absurd allocations inside the graph).
+    private var ownedBytes: [UInt8] = []
 
     init<T>(
         tensorData values: [T],
@@ -54,44 +64,78 @@ final class OrtValueRef: @unchecked Sendable {
         elementType: ONNXTensorElementDataType
     ) throws {
         let byteCount = values.count * MemoryLayout<T>.stride
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        bytes.withUnsafeMutableBytes { dst in
+            values.withUnsafeBytes { src in
+                _ = dst.copyBytes(from: src)
+            }
+        }
+        ownedBytes = bytes
         var out: UnsafeMutablePointer<OrtValue>?
         var infoOut: UnsafeMutablePointer<OrtMemoryInfo>?
         try OrtRuntime.check(OrtRuntime.api.pointee.CreateCpuMemoryInfo!(OrtDeviceAllocator, OrtMemTypeDefault, &infoOut))
         guard let info = infoOut else { throw OrtError.failed("CreateCpuMemoryInfo returned nil") }
-        try values.withUnsafeBufferPointer { buffer in
+        try ownedBytes.withUnsafeMutableBufferPointer { buffer in
             try OrtRuntime.check(OrtRuntime.api.pointee.CreateTensorWithDataAsOrtValue!(
                 info,
-                UnsafeMutableRawPointer(mutating: buffer.baseAddress),
+                buffer.baseAddress,
                 byteCount,
                 shape, shape.count,
                 elementType,
                 &out
             ))
         }
-        OrtRuntime.api.pointee.ReleaseMemoryInfo!(info)
         value = out!
+        self.elementType = elementType
+        self.memoryInfo = info
     }
 
     /// Adopts a session-produced value (the Run call handed ownership over).
-    init(adoptedTensor value: UnsafeMutablePointer<OrtValue>) {
+    init(adoptedTensor value: UnsafeMutablePointer<OrtValue>, elementType: ONNXTensorElementDataType) {
         self.value = value
+        self.elementType = elementType
+        self.memoryInfo = nil
     }
 
-    /// Raw tensor bytes as a typed array (the pipeline copies them out
-    /// immediately, so no lifetime is retained).
-    func tensorData<T>() throws -> [T] {
+    /// The tensor's raw bytes — length is the exact byte count for the
+    /// element type this value carries, so no readback can over-read.
+    func tensorData() throws -> Data {
         var raw: UnsafeMutableRawPointer?
         try OrtRuntime.check(OrtRuntime.api.pointee.GetTensorMutableData!(value, &raw))
         var info: UnsafeMutablePointer<OrtTensorTypeAndShapeInfo>?
         try OrtRuntime.check(OrtRuntime.api.pointee.GetTensorTypeAndShape!(value, &info))
+        defer { OrtRuntime.api.pointee.ReleaseTensorTypeAndShapeInfo!(info) }
         var count: Int = 0
         try OrtRuntime.check(OrtRuntime.api.pointee.GetTensorShapeElementCount!(info!, &count))
-        OrtRuntime.api.pointee.ReleaseTensorTypeAndShapeInfo!(info)
-        guard count > 0, let raw else { return [] }
-        return Array(UnsafeBufferPointer(
-            start: raw.assumingMemoryBound(to: T.self),
-            count: count * MemoryLayout<T>.stride / MemoryLayout<T>.stride
-        ))
+        guard count > 0, let raw else { return Data() }
+        return Data(bytes: raw, count: count * Self.elementStride(for: elementType))
+    }
+
+    /// The tensor's shape, e.g. [1, 23] — for diagnostics.
+    func dimensions() throws -> [Int64] {
+        var info: UnsafeMutablePointer<OrtTensorTypeAndShapeInfo>?
+        try OrtRuntime.check(OrtRuntime.api.pointee.GetTensorTypeAndShape!(value, &info))
+        defer { OrtRuntime.api.pointee.ReleaseTensorTypeAndShapeInfo!(info) }
+        var dimCount: Int = 0
+        try OrtRuntime.check(OrtRuntime.api.pointee.GetDimensionsCount!(info!, &dimCount))
+        guard dimCount > 0 else { return [] }
+        var dims = [Int64](repeating: 0, count: dimCount)
+        try OrtRuntime.check(OrtRuntime.api.pointee.GetDimensions!(info!, &dims, dimCount))
+        return dims
+    }
+
+    /// Element-typed convenience for float waveforms (what every TTS graph
+    /// emits).
+    func floatTensorData() throws -> [Float] {
+        try tensorData().withUnsafeBytes { raw in Array(raw.bindMemory(to: Float.self)) }
+    }
+
+    static func elementStride(for type: ONNXTensorElementDataType) -> Int {
+        switch type {
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT: return MemoryLayout<Float>.stride
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64: return MemoryLayout<Int64>.stride
+        default: return 1
+        }
     }
 
     /// The raw session input pointer (the C API wants `const OrtValue*`).
@@ -129,9 +173,11 @@ final class OrtSessionRef: @unchecked Sendable {
         try OrtRuntime.check(api.pointee.SetIntraOpNumThreads!(optionsLocal, Int32(threadCount)))
 
         var sessionOut: UnsafeMutablePointer<OrtSession>?
-        try modelPath.withCString { path in
-            try OrtRuntime.check(api.pointee.CreateSession!(envLocal, path, optionsLocal, &sessionOut))
-        }
+        let pathBuf = OrtSessionRef.cStringBuffer(modelPath)
+        defer { pathBuf.deallocate() }
+        try OrtRuntime.check(api.pointee.CreateSession!(
+            envLocal, pathBuf.baseAddress, optionsLocal, &sessionOut
+        ))
         guard let sessionLocal = sessionOut else { throw OrtError.failed("CreateSession returned nil") }
 
         var memOut: UnsafeMutablePointer<OrtMemoryInfo>?
@@ -153,6 +199,8 @@ final class OrtSessionRef: @unchecked Sendable {
             ))
             guard let name = allocated else { continue }
             names.append(String(cString: name))
+            // The default allocator owns this string per the ORT docs; free
+            // it through the allocator we passed in.
             api.pointee.AllocatorFree!(
                 OrtAllocatorInstance.defaultAllocator, UnsafeMutableRawPointer(name)
             )
@@ -187,7 +235,11 @@ final class OrtSessionRef: @unchecked Sendable {
         var result: [String: OrtValueRef] = [:]
         for (index, name) in requested.enumerated() {
             guard let value = outputs[index] else { continue }
-            result[name] = OrtValueRef(adoptedTensor: value)
+            // TTS graphs (piper/kokoro/supertonic) emit float32 waveforms.
+            result[name] = OrtValueRef(
+                adoptedTensor: value,
+                elementType: ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT
+            )
         }
         return result
     }

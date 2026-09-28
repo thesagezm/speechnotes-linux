@@ -102,7 +102,7 @@ public final class PiperEngine: TTSEngineBase, @unchecked Sendable {
         }
         let outputs = try model.run(inputs: tensors, outputNames: nil)
         let outputName = model.outputNames.first ?? "output"
-        guard let wave = try outputs[outputName]?.tensorData() as [Float]?, !wave.isEmpty else {
+        guard let wave = try outputs[outputName]?.floatTensorData() as [Float]?, !wave.isEmpty else {
             throw TTSError.synthesisFailed("piper model produced no audio")
         }
         guard !abort() else { return config.audio.sample_rate }

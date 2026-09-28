@@ -92,6 +92,28 @@ public final class KokoroEngine: TTSEngineBase, @unchecked Sendable {
         Log.info("KokoroEngine ready: \(modelFile), \(vocab.count) vocab entries, \(voices.count) voices")
     }
 
+    /// Test-only: the tokens + style slice this engine would run.
+    func testingPreparation(voice: String) -> (ids: [Int64], style: [Float], speed: [Float])? {
+        let bridge = EspeakBridge()
+        try? bridge.initialize()
+        _ = bridge.setVoice(phonemizerVoice)
+        let phonemes = bridge.phonemes(for: "Hello from Kokoro.").joined(separator: " ")
+        let tokens = tokenize(phonemes)
+        guard let flat = voicesFlat(for: voice) else { return nil }
+        let rows = max(1, flat.count / Self.styleDim)
+        let adjusted = min(max(tokens.count - 2, 0), rows - 1)
+        let offset = adjusted * Self.styleDim
+        guard offset + Self.styleDim <= flat.count else { return nil }
+        return (tokens, Array(flat[offset..<(offset + Self.styleDim)]), [1.0])
+    }
+
+    /// Test-only: run the graph directly on this engine's session to isolate
+    /// engine-state vs session-state failures.
+    func sessionForTesting() -> OrtSessionRef? {
+        try? ensureInitialized()
+        return session
+    }
+
     private var vocab: [String: Int] = [:]
 
     @discardableResult
@@ -130,13 +152,16 @@ public final class KokoroEngine: TTSEngineBase, @unchecked Sendable {
         }
         let style = Array(flat[offset..<(offset + Self.styleDim)])
 
+        let idTensor = try OrtValueRef(tensorData: tokens, shape: [1, Int64(tokens.count)], elementType: OrtElementType.int64)
+        let styleTensor = try OrtValueRef(tensorData: style, shape: [1, Int64(Self.styleDim)], elementType: OrtElementType.float)
+        let speedTensor = try OrtValueRef(tensorData: [speed], shape: [1], elementType: OrtElementType.float)
         let outputs: [String: OrtValueRef]
         do {
             outputs = try session.run(
                 inputs: [
-                    "input_ids": try OrtValueRef(tensorData: tokens, shape: [1, Int64(tokens.count)], elementType: OrtElementType.int64),
-                    "style": try OrtValueRef(tensorData: style, shape: [1, Int64(Self.styleDim)], elementType: OrtElementType.float),
-                    "speed": try OrtValueRef(tensorData: [speed], shape: [1], elementType: OrtElementType.float),
+                    "input_ids": idTensor,
+                    "style": styleTensor,
+                    "speed": speedTensor,
                 ],
                 outputNames: [outputName]
             )
@@ -145,7 +170,7 @@ public final class KokoroEngine: TTSEngineBase, @unchecked Sendable {
         }
 
         guard let outputValue = outputs[outputName],
-              let wave: [Float] = try? outputValue.tensorData(),
+              let wave: [Float] = try? outputValue.floatTensorData(),
               !wave.isEmpty else {
             throw TTSError.synthesisFailed("model produced no audio")
         }
@@ -158,10 +183,13 @@ public final class KokoroEngine: TTSEngineBase, @unchecked Sendable {
         return 24_000
     }
 
-    /// Per-character vocab lookup, matching the reference tokenizer.
-    /// Whitespace between clauses maps to the vocab's space id.
+    /// Reference pipeline encoding: EOS id (0) pads both ends, with each
+    /// phoneme character mapped through the vocab (space = 16).
     private func tokenize(_ phonemes: String) -> [Int64] {
-        phonemes.compactMap { vocab[String($0)] ?? vocab[" "] }.map(Int64.init)
+        let eos = Int64(vocab["$"] ?? 0)
+        let space = vocab[" "] ?? 16
+        let ids = phonemes.compactMap { vocab[String($0)] ?? space }.map(Int64.init)
+        return [eos] + ids + [eos]
     }
 
     /// Voice banks are keyed by name + ".npy" in the zip.
@@ -206,21 +234,25 @@ public enum KokoroModelManager {
             && (size("voices.npz") > 10_000_000)
     }
 
-    /// Downloads the fp32 model + tokenizer + voice bank (~340 MB total).
+    /// Downloads the ONNX tier + tokenizer + voice bank (~340 MB for fp32,
+    /// ~190 MB for uint8). The tier comes from KOKORO_TIER (unset = fp32).
     public static func download() async throws {
         try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
-        for (path, size) in [
-            ("onnx/model.onnx", 326_000_000),
-            ("tokenizer.json", 3_500),
-            ("voices.npz", 10_500_000),
-        ] {
-            let name = (path as NSString).lastPathComponent
-            guard let url = URL(string: "\(baseURL)/\(path)") else {
+        let tier = ProcessInfo.processInfo.environment["KOKORO_TIER"] == "uint8"
+            ? "model_uint8.onnx"
+            : "model.onnx"
+        let files: [(path: String, name: String)] = [
+            ("onnx/\(tier)", tier),
+            ("tokenizer.json", "tokenizer.json"),
+            ("voices.npz", "voices.npz"),
+        ]
+        for file in files {
+            guard let url = URL(string: "\(baseURL)/\(file.path)") else {
                 throw TTSError.synthesisFailed("bad Kokoro URL")
             }
             let (data, _) = try await URLSession.shared.data(from: url)
-            try data.write(to: modelDirectory.appendingPathComponent(name), options: .atomic)
-            Log.info("KokoroModelManager: wrote \(name) (\(data.count) bytes)")
+            try data.write(to: modelDirectory.appendingPathComponent(file.name), options: .atomic)
+            Log.info("KokoroModelManager: wrote \(file.name) (\(data.count) bytes)")
         }
     }
 }

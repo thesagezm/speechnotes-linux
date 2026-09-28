@@ -629,7 +629,7 @@ class TextToSpeech {
         let dpOutputs = try dpOrt.run(inputs: ["text_ids": textIdsValue, "style_dp": style.dp, "text_mask": textMaskValue],
                                        outputNames: ["duration"])
         
-        var duration = try dpOutputs["duration"]!.tensorData() as [Float]
+        var duration = try dpOutputs["duration"]!.floatTensorData()
         
         // Apply speed factor to duration
         for i in 0..<duration.count {
@@ -694,7 +694,7 @@ class TextToSpeech {
                 "total_step": totalStepValue
             ], outputNames: ["denoised_latent"])
 
-            let denoisedFlat = try vectorEstOutputs["denoised_latent"]!.tensorData() as [Float]
+            let denoisedFlat = try vectorEstOutputs["denoised_latent"]!.floatTensorData()
 
             // Reshape to 3D: the reshape step was O(dim × len) appends per
             // element; it now uses reserveCapacity and an index cursor.
@@ -724,7 +724,7 @@ class TextToSpeech {
         
         let vocoderOutputs = try vocoderOrt.run(inputs: ["latent": finalXtValue], outputNames: ["wav_tts"])
         
-        let wav = try vocoderOutputs["wav_tts"]!.tensorData() as [Float]
+        let wav = try vocoderOutputs["wav_tts"]!.floatTensorData()
         
         return (wav, duration)
     }

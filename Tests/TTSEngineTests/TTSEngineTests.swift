@@ -80,9 +80,28 @@ final class TTSEngineTests: XCTestCase {
     }
 
     func testEngineFactoryRefusesMissingEngines() {
-        XCTAssertThrowsError(try EngineFactory.make(kind: .kokoro))
+        // supertonic has no engine yet; espeak and kokoro are wired (kokoro
+        // constructs even without its model — play() surfaces that "not
+        // ready" as a soft error rather than throwing at the factory).
         XCTAssertThrowsError(try EngineFactory.make(kind: .supertonic))
         XCTAssertNoThrow(try EngineFactory.make(kind: .espeak))
+        XCTAssertNoThrow(try EngineFactory.make(kind: .kokoro))
+        XCTAssertTrue(try EngineFactory.make(kind: .espeak).modelCreated())
+        // With the model installed the kokoro engine is genuinely ready.
+        if KokoroModelManager.modelFilesAreValid() {
+            XCTAssertTrue(try EngineFactory.make(kind: .kokoro).modelCreated())
+        } else {
+            XCTAssertFalse(try EngineFactory.make(kind: .kokoro).modelCreated())
+        }
+    }
+
+    /// What the phonemization front end actually emits — kokoro's expected
+    /// alphabet, sanity-checked against its vocab.
+    func testEspeakPhonemeIpaOutput() throws {
+        let bridge = try XCTUnwrap(EspeakEngine().bridgeForTesting())
+        for text in ["Hello from Kokoro.", "Testing one two three."] {
+            XCTAssertFalse(bridge.phonemes(for: text).isEmpty, text)
+        }
     }
 
     /// Proves the shared library loads and the vendored header's ABI
@@ -99,6 +118,98 @@ final class TTSEngineTests: XCTestCase {
         XCTAssertEqual(ids, [1, 0, 10, 0, 11, 12, 0, 2])
         // Unknown symbols (stress marks) drop silently.
         XCTAssertEqual(PiperEngine.phonemeIds(from: ["ˈa"], map: map), [1, 0, 10, 0, 2])
+    }
+
+    /// Runs the engine's own session directly — bypasses encodeSpeechImpl to
+    /// exercise the graph with explicit tensors (regression guard for the
+    /// input-buffer lifetime bug: scoped caller storage used to be freed
+    /// before Run read it, failing intermittently).
+    private func kokoroRun(
+        engine: KokoroEngine, ids: [Int64], style: [Float], speed: Float
+    ) throws -> Int {
+        guard let session = engine.sessionForTesting() else {
+            throw TTSError.synthesisFailed("no session")
+        }
+        let idTensor = try OrtValueRef(
+            tensorData: ids, shape: [1, Int64(ids.count)], elementType: OrtElementType.int64
+        )
+        let styleTensor = try OrtValueRef(
+            tensorData: style, shape: [1, Int64(style.count)], elementType: OrtElementType.float
+        )
+        let speedTensor = try OrtValueRef(
+            tensorData: [speed], shape: [1], elementType: OrtElementType.float
+        )
+        let outputs = try session.run(
+            inputs: ["input_ids": idTensor, "style": styleTensor, "speed": speedTensor],
+            outputNames: ["waveform"]
+        )
+        guard let wave = outputs["waveform"] else {
+            throw TTSError.synthesisFailed("no waveform output")
+        }
+        return try wave.floatTensorData().count
+    }
+
+    /// Regression: repeated identical runs must all succeed deterministically
+    /// (the tensor lifetime bug failed a random subset), and an Int64 tensor
+    /// must round-trip as Int64 bytes.
+    func testKokoroStyleMatrix() throws {
+        guard KokoroModelManager.modelFilesAreValid() else {
+            throw XCTSkip("no kokoro model installed")
+        }
+        let probe = try OrtValueRef(
+            tensorData: [Int64](arrayLiteral: 0, 50, 83),
+            shape: [1, 3],
+            elementType: OrtElementType.int64
+        )
+        let roundTripped = try probe.tensorData().withUnsafeBytes { raw in
+            Array(raw.bindMemory(to: Int64.self))
+        }
+        XCTAssertEqual(roundTripped, [0, 50, 83])
+
+        let engine = KokoroEngine()
+        XCTAssertTrue(
+            engine.createModel(
+                modelPath: KokoroModelManager.modelDirectory.path,
+                modelId: KokoroModelManager.curatedVoice
+            )
+        )
+        guard let prep = engine.testingPreparation(voice: "af_heart") else {
+            return XCTFail("no prep")
+        }
+        for _ in 0..<3 {
+            XCTAssertGreaterThan(try kokoroRun(engine: engine, ids: prep.ids, style: prep.style, speed: 1.0), 0)
+        }
+        let zeros = [Float](repeating: 0, count: prep.style.count)
+        XCTAssertGreaterThan(try kokoroRun(engine: engine, ids: prep.ids, style: zeros, speed: 1.0), 0)
+    }
+
+    /// Full Kokoro path — skipped unless the model set is installed
+    /// (Settings → download, or KokoroModelManager.download()).
+    func testKokoroSynthesisIfModelInstalled() throws {
+        guard KokoroModelManager.modelFilesAreValid() else {
+            throw XCTSkip("no kokoro model installed")
+        }
+        let engine = KokoroEngine()
+        XCTAssertTrue(
+            engine.createModel(
+                modelPath: KokoroModelManager.modelDirectory.path,
+                modelId: KokoroModelManager.curatedVoice
+            )
+        )
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("kokoro-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let rate = try engine.encodeSpeechImpl(
+            text: "Hello from Kokoro.",
+            speed: 1.0,
+            outFile: url,
+            abort: { false }
+        )
+        XCTAssertEqual(rate, 24_000)
+        let (samples, wavRate) = try WAVFile.read(at: url)
+        XCTAssertEqual(wavRate, 24_000)
+        XCTAssertGreaterThan(samples.count, 24_000, "one sentence of 24 kHz audio")
     }
 
     /// Full Piper path — skipped unless a voice is installed
