@@ -80,18 +80,25 @@ final class TTSEngineTests: XCTestCase {
     }
 
     func testEngineFactoryRefusesMissingEngines() {
-        // supertonic has no engine yet; espeak and kokoro are wired (kokoro
-        // constructs even without its model — play() surfaces that "not
-        // ready" as a soft error rather than throwing at the factory).
-        XCTAssertThrowsError(try EngineFactory.make(kind: .supertonic))
+        // pico is the only engine with no implementation; espeak, piper,
+        // kokoro and supertonic construct even without their model files —
+        // play() surfaces "not ready" as a soft error rather than throwing
+        // at the factory.
+        XCTAssertThrowsError(try EngineFactory.make(kind: .pico))
         XCTAssertNoThrow(try EngineFactory.make(kind: .espeak))
         XCTAssertNoThrow(try EngineFactory.make(kind: .kokoro))
+        XCTAssertNoThrow(try EngineFactory.make(kind: .supertonic))
         XCTAssertTrue(try EngineFactory.make(kind: .espeak).modelCreated())
-        // With the model installed the kokoro engine is genuinely ready.
+        // With the models installed the engines are genuinely ready.
         if KokoroModelManager.modelFilesAreValid() {
             XCTAssertTrue(try EngineFactory.make(kind: .kokoro).modelCreated())
         } else {
             XCTAssertFalse(try EngineFactory.make(kind: .kokoro).modelCreated())
+        }
+        if SupertonicModelManager.modelFilesAreValid() {
+            XCTAssertTrue(try EngineFactory.make(kind: .supertonic).modelCreated())
+        } else {
+            XCTAssertFalse(try EngineFactory.make(kind: .supertonic).modelCreated())
         }
     }
 
@@ -210,6 +217,38 @@ final class TTSEngineTests: XCTestCase {
         let (samples, wavRate) = try WAVFile.read(at: url)
         XCTAssertEqual(wavRate, 24_000)
         XCTAssertGreaterThan(samples.count, 24_000, "one sentence of 24 kHz audio")
+        XCTAssertTrue(samples.contains { abs(Int32($0)) > 1_000 }, "waveform is not silence")
+    }
+
+    /// Full Supertonic path (4-graph pipeline) — skipped unless the model
+    /// set is installed (Settings → download, or SupertonicModelManager.download()).
+    func testSupertonicSynthesisIfModelInstalled() throws {
+        guard SupertonicModelManager.modelFilesAreValid() else {
+            throw XCTSkip("no supertonic models installed")
+        }
+        let engine = SupertonicEngine()
+        XCTAssertTrue(
+            engine.createModel(
+                modelPath: SupertonicModelManager.onnxDirectory.path,
+                modelId: SupertonicModelManager.curatedVoice
+            )
+        )
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("supertonic-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let rate = try engine.encodeSpeechImpl(
+            text: "Hello from Supertonic.",
+            speed: 1.0,
+            outFile: url,
+            abort: { false }
+        )
+        XCTAssertEqual(rate, 44_100)
+        let (samples, wavRate) = try WAVFile.read(at: url)
+        XCTAssertEqual(wavRate, 44_100)
+        // One short sentence at 44.1 kHz — well over a second of audio.
+        XCTAssertGreaterThan(samples.count, 44_100, "one sentence of 44.1 kHz audio")
+        XCTAssertTrue(samples.contains { abs(Int32($0)) > 1_000 }, "waveform is not silence")
     }
 
     /// Full Piper path — skipped unless a voice is installed

@@ -24,6 +24,7 @@ struct SettingsPane: View {
                     switch EngineKind(rawValue: prefs.engineKind) {
                     case .espeak: prefs.engineKind = EngineKind.piper.rawValue
                     case .piper: prefs.engineKind = EngineKind.kokoro.rawValue
+                    case .kokoro: prefs.engineKind = EngineKind.supertonic.rawValue
                     default: prefs.engineKind = EngineKind.espeak.rawValue
                     }
                 }
@@ -56,6 +57,21 @@ struct SettingsPane: View {
                     Task { @MainActor in
                         do {
                             _ = try await KokoroModelManager.download()
+                            piperStatus = "installed ✓"
+                        } catch {
+                            piperStatus = "failed: \(error)"
+                        }
+                    }
+                }
+                Text(piperStatus)
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                Button("Download Supertonic (~260 MB)") {
+                    piperStatus = "downloading Supertonic…"
+                    Task { @MainActor in
+                        do {
+                            _ = try await SupertonicModelManager.download()
                             piperStatus = "installed ✓"
                         } catch {
                             piperStatus = "failed: \(error)"

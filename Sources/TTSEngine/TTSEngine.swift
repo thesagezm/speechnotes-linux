@@ -159,7 +159,16 @@ public enum EngineFactory {
                 )
             }
             return engine
-        case .pico, .supertonic:
+        case .supertonic:
+            let engine = SupertonicEngine()
+            if SupertonicModelManager.modelFilesAreValid() {
+                _ = engine.createModel(
+                    modelPath: SupertonicModelManager.onnxDirectory.path,
+                    modelId: SupertonicModelManager.curatedVoice
+                )
+            }
+            return engine
+        case .pico:
             throw TTSError.engineNotAvailable(kind)
         }
     }
