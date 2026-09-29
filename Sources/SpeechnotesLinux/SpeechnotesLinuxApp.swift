@@ -18,6 +18,7 @@ struct SpeechnotesLinuxApp: App {
     var body: some Scene {
         WindowGroup("Speechnotes Linux") {
             AppShell()
+                .windowLifecycle()
         }
         .defaultSize(width: 1150, height: 720)
     }
