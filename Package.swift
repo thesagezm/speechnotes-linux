@@ -16,6 +16,7 @@ let package = Package(
     products: [
         .executable(name: "speechnotes-linux", targets: ["SpeechnotesLinux"]),
         .executable(name: "gtk-smoke", targets: ["GTKSmoke"]),
+        .executable(name: "theme-smoke", targets: ["ThemeSmoke"]),
         .executable(name: "alsa-tone", targets: ["AlsaTone"]),
         .executable(name: "espeak-say", targets: ["EspeakSay"])
     ],
@@ -63,6 +64,12 @@ let package = Package(
             name: "AlsaSink",
             dependencies: ["CALSA", "Log"]
         ),
+        // Theme + accent + display-wide CSS. GTK C interop is isolated here;
+        // depends on SwiftCrossUI for ObservableObject/ColorScheme on Linux.
+        .target(
+            name: "Appearance",
+            dependencies: ["CGTK4", "Log", .product(name: "SwiftCrossUI", package: "swift-cross-ui")]
+        ),
         // Shared leveled logger.
         .target(
             name: "Log",
@@ -89,6 +96,11 @@ let package = Package(
             name: "GTKSmoke",
             dependencies: ["CGTK4"]
         ),
+        // Diagnostic: theme CSS + settings plumbing without a window.
+        .executableTarget(
+            name: "ThemeSmoke",
+            dependencies: ["CGTK4", "Appearance"]
+        ),
         // Phase-0 diagnostic: a 440 Hz tone through the ALSA sink.
         .executableTarget(
             name: "AlsaTone",
@@ -107,6 +119,7 @@ let package = Package(
                 "SpeechLogic",
                 "Data",
                 "TTSEngine",
+                "Appearance",
                 "CALSA",
                 "AlsaSink",
                 "Log",
@@ -168,6 +181,10 @@ let package = Package(
             resources: [
                 .copy("Fixtures")
             ]
+        ),
+        .testTarget(
+            name: "AppearanceTests",
+            dependencies: ["Appearance"]
         )
     ]
 )

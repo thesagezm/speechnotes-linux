@@ -3,118 +3,331 @@ import SwiftCrossUI
 import Data
 import SpeechLogic
 import TTSEngine
+import Appearance
 
-/// Preferences (Prefs parity): speech toggles and rate, plus a save-now
-/// button and library stats. The engine picker joins in Phase 3 when the
-/// engine tier exists to back it.
+/// Preferences, grouped like the iOS Settings tabs: Speech, Appearance,
+/// Models, Data. Switches and menu pickers instead of cycling buttons; every
+/// model row carries its own install state and status line.
 struct SettingsPane: View {
     let prefs: Prefs
     let notes: NotesStore
     let notebooks: NotebooksStore
 
-    @State private var piperStatus = ""
+    @State private var theme = ThemeController.shared
     @Environment(\.chooseFile) private var chooseFile
     @Environment(\.chooseFileSaveDestination) private var chooseFileSaveDestination
 
+    @State private var jexStatus: String?
+    @State private var modelStatus: [String: String] = [:]
+
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Text("Settings")
-                Spacer()
-            }
-            HStack(spacing: 8) {
-                Button("Engine: \(EngineKind(rawValue: prefs.engineKind)?.displayName ?? prefs.engineKind)") {
-                    switch EngineKind(rawValue: prefs.engineKind) {
-                    case .espeak: prefs.engineKind = EngineKind.piper.rawValue
-                    case .piper: prefs.engineKind = EngineKind.kokoro.rawValue
-                    case .kokoro: prefs.engineKind = EngineKind.supertonic.rawValue
-                    case .supertonic: prefs.engineKind = EngineKind.pico.rawValue
-                    default: prefs.engineKind = EngineKind.espeak.rawValue
+        ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                header("Speech")
+                section {
+                    row("Engine") {
+                        Picker(
+                            of: allEngineKinds.map(\.displayName),
+                            selection: engineSelection
+                        )
+                        .pickerStyle(.menu)
                     }
+                    sliderRow(
+                        title: "Speech rate",
+                        value: rateBinding,
+                        range: 0.5...2.0,
+                        display: rateLabel
+                    )
+                    Toggle("Read along while speaking", isOn: readAlongBinding)
+                        .toggleStyle(.switch)
                 }
-                Spacer()
-            }
-            Toggle("Read along while speaking", isOn: readAlongBinding)
-            Toggle("Render Markdown in the editor", isOn: renderMarkdownBinding)
-            HStack(spacing: 8) {
-                Text("Speech rate")
-                Slider(value: rateBinding, in: 0.5...2.0)
-                Text(rateLabel)
-            }
-            HStack(spacing: 8) {
-                Button("Download Piper voice (\(PiperModelManager.curatedVoice), ~63 MB)") {
-                    piperStatus = "downloading…"
-                    Task { @MainActor in
-                        do {
+
+                header("Appearance")
+                section {
+                    row("Theme") {
+                        Picker(
+                            of: ["System", "Light", "Dark"],
+                            selection: themeSelection
+                        )
+                        .pickerStyle(.menu)
+                    }
+                    row("Accent") {
+                        Picker(
+                            of: AccentChoice.allCases.map(\.displayName),
+                            selection: accentSelection
+                        )
+                        .pickerStyle(.menu)
+                    }
+                    sliderRow(
+                        title: "Text size",
+                        value: textScaleBinding,
+                        range: 0.75...1.5,
+                        display: "\(Int((prefs.readerTextScale * 100).rounded()))%"
+                    )
+                    Toggle("Render Markdown in the editor", isOn: renderMarkdownBinding)
+                        .toggleStyle(.switch)
+                }
+
+                header("Models")
+                section {
+                    modelRow(
+                        key: "piper",
+                        title: "Piper voice",
+                        subtitle: "\(PiperModelManager.curatedVoice), ~63 MB",
+                        installed: !PiperModelManager.installedVoices().isEmpty
+                    ) {
+                        Task { await download("piper", "Piper") {
                             _ = try await PiperModelManager.download()
-                            piperStatus = "installed ✓"
-                        } catch {
-                            piperStatus = "failed: \(error)"
-                        }
+                        } }
+                    }
+                    modelRow(
+                        key: "kokoro",
+                        title: "Kokoro",
+                        subtitle: "82M uint8 tier, ~190 MB",
+                        installed: KokoroModelManager.modelFilesAreValid()
+                    ) {
+                        Task { await download("kokoro", "Kokoro") {
+                            try await KokoroModelManager.download()
+                        } }
+                    }
+                    modelRow(
+                        key: "supertonic",
+                        title: "Supertonic",
+                        subtitle: "full set, ~260 MB",
+                        installed: !SupertonicModelManager.installedVoices().isEmpty
+                    ) {
+                        Task { await download("supertonic", "Supertonic") {
+                            try await SupertonicModelManager.download()
+                        } }
                     }
                 }
-                Spacer()
-            }
-            HStack(spacing: 8) {
-                Button("Download Kokoro (82M, ~190 MB)") {
-                    piperStatus = "downloading Kokoro…"
-                    Task { @MainActor in
-                        do {
-                            _ = try await KokoroModelManager.download()
-                            piperStatus = "installed ✓"
-                        } catch {
-                            piperStatus = "failed: \(error)"
+
+                header("Data")
+                section {
+                    row("Backups") {
+                        HStack(spacing: 8) {
+                            Button("Export library (JEX)…") {
+                                Task { await exportLibrary() }
+                            }
+                            .buttonStyle(.bordered)
+                            Button("Import JEX…") {
+                                Task { await importJex() }
+                            }
+                            .buttonStyle(.bordered)
                         }
                     }
-                }
-                Text(piperStatus)
-                Spacer()
-            }
-            HStack(spacing: 8) {
-                Button("Download Supertonic (~260 MB)") {
-                    piperStatus = "downloading Supertonic…"
-                    Task { @MainActor in
-                        do {
-                            _ = try await SupertonicModelManager.download()
-                            piperStatus = "installed ✓"
-                        } catch {
-                            piperStatus = "failed: \(error)"
+                    row("Save now") {
+                        Button("Save everything now") {
+                            notes.flushNow()
+                            prefs.flushNow()
+                            BookmarkStore.shared.persistNow()
+                            jexStatus = "Saved."
                         }
+                        .buttonStyle(.bordered)
+                    }
+                    if let status = jexStatus {
+                        Text(status)
+                            .font(.footnote)
+                            .foregroundColor(.gray)
                     }
                 }
-                Text(piperStatus)
-                Spacer()
+
+                Text(libraryStats)
+                    .font(.footnote)
+                    .foregroundColor(.gray)
+                    .padding(.top, 12)
             }
-            HStack(spacing: 8) {
-                Button("Save everything now") {
-                    notes.flushNow()
-                    prefs.flushNow()
-                    BookmarkStore.shared.persistNow()
-                }
-                Spacer()
-            }
-            HStack(spacing: 8) {
-                Button("Export library (JEX)…") {
-                    Task { await exportLibrary() }
-                }
-                Button("Import JEX…") {
-                    Task { await importJex() }
-                }
-                Spacer()
-            }
-            if let status = jexStatus {
-                Text(status).foregroundColor(.gray)
-            }
-            Spacer()
-            HStack(spacing: 8) {
-                Text(stats)
-                Spacer()
-            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
     }
 
-    @State private var jexStatus: String?
+    // MARK: - Building blocks
+
+    private func header(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.weight(.semibold))
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+    }
+
+    private func section(@ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(themeColor.card)
+        .cornerRadius(8)
+    }
+
+    private func row(_ title: String, @ViewBuilder control: () -> some View) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+            Spacer()
+            control()
+        }
+    }
+
+    private func sliderRow(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        display: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(display)
+                    .foregroundColor(.gray)
+                    .font(.callout)
+            }
+            Slider(value: value, in: range)
+        }
+    }
+
+    private func modelRow(
+        key: String,
+        title: String,
+        subtitle: String,
+        installed: Bool,
+        onDownload: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    Text(subtitle)
+                        .font(.footnote)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+                if installed {
+                    Text("Installed ✓")
+                        .foregroundColor(.gray)
+                } else {
+                    Button("Download") {
+                        modelStatus[key] = "downloading…"
+                        onDownload()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            if let status = modelStatus[key] {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundColor(.gray)
+            }
+        }
+    }
+
+    private var themeColor: CardColors { CardColors(scheme: theme.effectiveScheme) }
+
+    private struct CardColors {
+        let scheme: ColorScheme
+        var card: Color {
+            switch scheme {
+            case .light: return Color(white: 0.0, opacity: 0.035)
+            case .dark: return Color(white: 1.0, opacity: 0.045)
+            }
+        }
+    }
+
+    // MARK: - Bindings
+
+    private var engineSelection: Binding<String?> {
+        Binding(
+            get: { EngineKind(rawValue: prefs.engineKind)?.displayName },
+            set: { name in
+                if let kind = allEngineKinds.first(where: { $0.displayName == name }) {
+                    prefs.engineKind = kind.rawValue
+                }
+            }
+        )
+    }
+
+    private var allEngineKinds: [EngineKind] {
+        [.espeak, .piper, .pico, .kokoro, .supertonic]
+    }
+
+    private var themeSelection: Binding<String?> {
+        Binding(
+            get: {
+                switch prefs.appearance {
+                case "light": return "Light"
+                case "dark": return "Dark"
+                default: return "System"
+                }
+            },
+            set: { name in
+                switch name {
+                case "Light": prefs.appearance = "light"
+                case "Dark": prefs.appearance = "dark"
+                default: prefs.appearance = "system"
+                }
+            }
+        )
+    }
+
+    private var accentSelection: Binding<String?> {
+        Binding(
+            get: { AccentChoice(rawValue: prefs.accentChoice)?.displayName },
+            set: { name in
+                if let choice = AccentChoice.allCases.first(where: { $0.displayName == name }) {
+                    prefs.accentChoice = choice.rawValue
+                }
+            }
+        )
+    }
+
+    private var readAlongBinding: Binding<Bool> {
+        Binding(
+            get: { prefs.readAlongEnabled },
+            set: { prefs.readAlongEnabled = $0 }
+        )
+    }
+
+    private var renderMarkdownBinding: Binding<Bool> {
+        Binding(
+            get: { prefs.renderMarkdown },
+            set: { prefs.renderMarkdown = $0 }
+        )
+    }
+
+    private var rateBinding: Binding<Double> {
+        Binding(
+            get: { prefs.rateMultiplier },
+            set: { prefs.rateMultiplier = min(2.0, max(0.5, $0)) }
+        )
+    }
+
+    private var textScaleBinding: Binding<Double> {
+        Binding(
+            get: { prefs.readerTextScale },
+            set: { prefs.readerTextScale = min(1.5, max(0.75, $0)) }
+        )
+    }
+
+    private var rateLabel: String {
+        String(format: "%.2f×", prefs.rateMultiplier)
+    }
+
+    private var libraryStats: String {
+        "\(notes.notes.count) note(s), \(notes.deletedNotes.count) in bin, "
+            + "\(notebooks.notebooks.count) notebook(s)"
+    }
+
+    // MARK: - Actions
+
+    private func download(_ key: String, _ label: String, _ body: @escaping () async throws -> Void) async {
+        do {
+            try await body()
+            modelStatus[key] = "installed ✓"
+        } catch {
+            modelStatus[key] = "\(label) download failed: \(error)"
+        }
+    }
 
     private func exportLibrary() async {
         guard let url = await chooseFileSaveDestination(
@@ -146,35 +359,5 @@ struct SettingsPane: View {
         } catch {
             jexStatus = "\(error)"
         }
-    }
-
-    private var stats: String {
-        "\(notes.notes.count) note(s), \(notes.deletedNotes.count) in bin, "
-            + "\(notebooks.notebooks.count) notebook(s)"
-    }
-
-    private var rateLabel: String {
-        String(format: "%.2f×", prefs.rateMultiplier)
-    }
-
-    private var readAlongBinding: Binding<Bool> {
-        Binding(
-            get: { prefs.readAlongEnabled },
-            set: { prefs.readAlongEnabled = $0 }
-        )
-    }
-
-    private var renderMarkdownBinding: Binding<Bool> {
-        Binding(
-            get: { prefs.renderMarkdown },
-            set: { prefs.renderMarkdown = $0 }
-        )
-    }
-
-    private var rateBinding: Binding<Double> {
-        Binding(
-            get: { prefs.rateMultiplier },
-            set: { prefs.rateMultiplier = min(2.0, max(0.5, $0)) }
-        )
     }
 }

@@ -20,6 +20,11 @@ public final class Prefs: ObservableObject {
     @Published public var engineKind: String { didSet { save() } }
     @Published public var voice: String { didSet { save() } }
     @Published public var rateMultiplier: Double { didSet { save() } }
+    // Appearance ("system"|"light"|"dark", AccentChoice raw values).
+    @Published public var appearance: String { didSet { save() } }
+    @Published public var accentChoice: String { didSet { save() } }
+    // Scales the editor/reader font; 1.0 is the default.
+    @Published public var readerTextScale: Double { didSet { save() } }
 
     private init() {
         let dict = (try? JSONSerialization.jsonObject(
@@ -33,6 +38,9 @@ public final class Prefs: ObservableObject {
         engineKind = dict["engineKind"] as? String ?? "espeak"
         voice = dict["voice"] as? String ?? ""
         rateMultiplier = dict["rateMultiplier"] as? Double ?? 1.0
+        appearance = dict["appearance"] as? String ?? "system"
+        accentChoice = dict["accentChoice"] as? String ?? "blue"
+        readerTextScale = dict["readerTextScale"] as? Double ?? 1.0
     }
 
     private static var fileURL: URL {
@@ -65,6 +73,9 @@ public final class Prefs: ObservableObject {
             "engineKind": engineKind,
             "voice": voice,
             "rateMultiplier": rateMultiplier,
+            "appearance": appearance,
+            "accentChoice": accentChoice,
+            "readerTextScale": readerTextScale,
         ]
         do {
             let data = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])

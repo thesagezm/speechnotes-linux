@@ -2,6 +2,7 @@ import Foundation
 import SwiftCrossUI
 import Data
 import TTSEngine
+import Appearance
 
 /// The Books shelf: the imported books, the import buttons (GTK file
 /// picker via SwiftCrossUI's chooseFile action), and bin/delete controls.
@@ -75,25 +76,47 @@ struct BookRowView: View {
     let onOpen: () -> Void
     let onBin: () -> Void
 
+    @State private var theme = ThemeController.shared
+
     var body: some View {
-        HStack(spacing: 8) {
-            Button(isPlaying ? "♪" : "▸") { onOpen() }
+        HStack(spacing: 10) {
+            Button {
+                onOpen()
+            } label: {
+                Text(isPlaying ? "❙❙" : "▸")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(isPlaying ? theme.accent : Color(white: 0.5))
+                    .frame(width: 26, height: 26)
+                    .background(theme.accent.opacity(isPlaying ? 0.14 : 0))
+                    .cornerRadius(13)
+            }
+            .buttonStyle(.borderless)
             VStack(alignment: .leading, spacing: 2) {
-                Text(book.title + (isPlaying ? "  (playing)" : ""))
+                Text(book.title)
+                    .font(.system(size: 14, weight: isPlaying ? .medium : .regular))
                 HStack(spacing: 8) {
                     Text(book.authorOrFormat)
+                        .font(.footnote)
+                        .foregroundColor(.gray)
                     if let error = book.importError, !error.isEmpty {
                         Text("⚠︎ \(error)")
+                            .font(.footnote)
                             .foregroundColor(.orange)
                     } else if let position = book.position {
                         Text("at chapter \(position.chapterIndex + 1)")
+                            .font(.footnote)
                             .foregroundColor(.gray)
+                    } else if isPlaying {
+                        Text("playing")
+                            .font(.footnote)
+                            .foregroundColor(theme.accent)
                     }
                 }
             }
             Spacer()
             Button("🗑") { onBin() }
+                .buttonStyle(.borderless)
         }
-        .padding(4)
+        .padding(6)
     }
 }

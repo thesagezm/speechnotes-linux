@@ -3,6 +3,7 @@ import SwiftCrossUI
 import Data
 import AppPaths
 import TTSEngine
+import Appearance
 
 /// The note editor: optional explicit title, the body TextEditor, the
 /// pin/star/delete controls, and the speak bar driving the TTS tier.
@@ -15,6 +16,7 @@ struct NoteEditorPane: View {
 
     @State private var tts = TTSController.shared
     @State private var prefs = Prefs.shared
+    @State private var theme = ThemeController.shared
 
     var body: some View {
         VStack(spacing: 8) {
@@ -22,18 +24,27 @@ struct NoteEditorPane: View {
                 Button(note.isPinned ? "Unpin" : "Pin") {
                     notes.setPinned(!note.isPinned, noteId: note.id)
                 }
+                .foregroundColor(note.isPinned ? theme.accent : .gray)
                 Button(note.isFavorite ? "Unstar" : "Star") {
                     notes.setFavorite(!note.isFavorite, noteId: note.id)
                 }
+                .foregroundColor(note.isFavorite ? theme.accent : .gray)
                 Spacer()
                 Text(progressText)
+                    .font(.footnote)
+                    .foregroundColor(.gray)
+            }
+            HStack(spacing: 8) {
                 if tts.isPlaying(noteId: note.id) {
                     if tts.state == .paused {
                         Button("▶ Resume") { tts.resume() }
+                            .buttonStyle(.bordered)
                     } else {
                         Button("❙❙ Pause") { tts.pause() }
+                            .buttonStyle(.bordered)
                     }
                     Button("■ Stop") { tts.stop() }
+                        .buttonStyle(.bordered)
                 } else {
                     Button("▶ Speak") {
                         tts.play(
@@ -43,27 +54,46 @@ struct NoteEditorPane: View {
                             voice: prefs.voice
                         )
                     }
+                    .buttonStyle(.bordered)
+                    .foregroundColor(theme.accent)
                 }
+                Divider()
                 Button("Delete") {
                     tts.stop()
                     notes.delete(noteId: note.id)
                 }
+                .buttonStyle(.borderless)
                 Button("⤓ WAV") {
                     exportStatus = "rendering…"
                     Task { await renderWav() }
                 }
+                .buttonStyle(.borderless)
+                Spacer()
             }
             if let status = exportStatus {
-                Text(status).foregroundColor(.gray)
+                Text(status)
+                    .font(.footnote)
+                    .foregroundColor(.gray)
             }
             if tts.isPlaying(noteId: note.id), let sentence = tts.currentSentence {
                 Text("▸ \(sentence)")
-                    .foregroundColor(.gray)
+                    .font(.callout)
+                    .foregroundColor(theme.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(theme.accent.opacity(0.08))
+                    .cornerRadius(6)
             }
             TextField("Title (optional)", text: titleBinding)
+                .font(.title2.weight(.semibold))
             TextEditor(text: textBinding)
+                .font(.system(size: editorFontSize))
         }
-        .padding(8)
+        .padding(12)
+    }
+
+    private var editorFontSize: Double {
+        15.0 * min(1.5, max(0.75, prefs.readerTextScale))
     }
 
     private var progressText: String {

@@ -28,7 +28,9 @@ struct NotesListPane: View {
             HStack(spacing: 8) {
                 TextField("Search notes…", text: $searchText)
                 Button("Sort: \(sortLabel)") { cycleSort() }
+                    .buttonStyle(.borderless)
                 Button("＋ New note") { createNote() }
+                    .buttonStyle(.bordered)
             }
             if filtered.isEmpty {
                 ContentUnavailableView {
@@ -51,18 +53,24 @@ struct NotesListPane: View {
 
     private func row(for note: Note) -> some View {
         HStack(spacing: 8) {
-            VStack(spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(meta(for: note).title)
+                    .font(.system(size: 14, weight: note.isPinned ? .medium : .regular))
                 Text(caption(for: note))
+                    .font(.footnote)
+                    .foregroundColor(.gray)
             }
             Spacer()
             Button(note.isPinned ? "📌" : "○") {
                 notes.setPinned(!note.isPinned, noteId: note.id)
             }
+            .buttonStyle(.borderless)
             Button(note.isFavorite ? "★" : "☆") {
                 notes.setFavorite(!note.isFavorite, noteId: note.id)
             }
+            .buttonStyle(.borderless)
         }
+        .padding(.vertical, 2)
     }
 
     private func caption(for note: Note) -> String {

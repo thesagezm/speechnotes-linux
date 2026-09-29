@@ -2,6 +2,7 @@ import Foundation
 import SwiftCrossUI
 import Data
 import TTSEngine
+import Appearance
 
 /// Three-column shell: destinations and notebook scopes on the left, the
 /// filtered note list in the middle, the editor on the right. The iOS app
@@ -13,6 +14,7 @@ struct AppShell: View {
     @State private var prefs = Prefs.shared
     @State private var tts = TTSController.shared
     @State private var books = BooksStore.shared
+    @State private var theme = ThemeController.shared
 
     @State private var pane: Pane = .notes
     @State private var selectedNoteId: UUID?
@@ -45,18 +47,29 @@ struct AppShell: View {
     }
 
     var body: some View {
+        // Idempotent theme sync; re-runs whenever an appearance pref changes.
+        let _ = theme.sync(appearance: prefs.appearance, accentChoice: prefs.accentChoice)
         NavigationSplitView(
             sidebar: { sidebar },
             content: { middleColumn },
             detail: { detailColumn }
         )
+        .colorScheme(theme.effectiveScheme)
     }
 
     // MARK: - Sidebar
 
     @ViewBuilder
     private var sidebar: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
+            HStack(spacing: 8) {
+                Text("Speechnotes")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+            }
+            .padding(.bottom, 12)
+
+            sectionLabel("Library")
             sidebarButton(
                 title: "All notes",
                 isActive: pane == .notes && prefs.activeNotebookScope == "all"
@@ -80,7 +93,7 @@ struct AppShell: View {
                     prefs.activeNotebookScope = notebook.id.uuidString
                 }
             }
-            Divider()
+            sectionLabel("More")
             sidebarButton(title: "Books", isActive: pane == .books) {
                 pane = .books
                 books.refresh()
@@ -104,14 +117,41 @@ struct AppShell: View {
         .padding(12)
     }
 
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.caption.weight(.medium))
+            .foregroundColor(.gray)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+    }
+
     private func sidebarButton(
         title: String,
         isActive: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(isActive ? "●  \(title)" : "○  \(title)") {
+        Button {
             action()
+        } label: {
+            HStack(spacing: 8) {
+                if isActive {
+                    Text(title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(theme.accent)
+                } else {
+                    Text(title)
+                        .font(.system(size: 14, weight: .regular))
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(theme.accent.opacity(isActive ? 0.14 : 0))
+            .cornerRadius(6)
         }
+        .buttonStyle(.borderless)
     }
 
     // MARK: - Columns
@@ -123,6 +163,7 @@ struct AppShell: View {
                 if let candidate = resumeCandidate {
                     HStack(spacing: 8) {
                         Text("Resume “\(candidate.note.title)”?")
+                            .font(.callout)
                         Spacer()
                         Button("Resume") {
                             selectedNoteId = candidate.note.id
@@ -135,9 +176,15 @@ struct AppShell: View {
                             )
                             resumeCandidate = nil
                         }
+                        .buttonStyle(.bordered)
                         Button("Dismiss") { resumeCandidate = nil }
+                            .buttonStyle(.borderless)
                     }
-                    .padding(8)
+                    .padding(10)
+                    .background(theme.accent.opacity(0.08))
+                    .cornerRadius(6)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
                 }
                 NotesListPane(
                     notes: notes,

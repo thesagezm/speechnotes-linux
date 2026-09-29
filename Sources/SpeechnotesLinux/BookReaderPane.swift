@@ -3,6 +3,7 @@ import SwiftCrossUI
 import Data
 import SpeechLogic
 import TTSEngine
+import Appearance
 
 /// The book reader: chapter text (epub spine extracted straight from the
 /// archive), TOC navigation, and the speak bar driving the TTS tier per
@@ -14,6 +15,7 @@ struct BookReaderPane: View {
 
     @State private var tts = TTSController.shared
     @State private var prefs = Prefs.shared
+    @State private var theme = ThemeController.shared
     @State private var chapterText: String?
     @State private var chapterIndex: Int = 0
     @State private var showToc = false
@@ -23,27 +25,46 @@ struct BookReaderPane: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                Button(book.position == nil ? "" : "↩ Resume") {
+                Button("↩ Resume") {
                     if let position = book.position {
                         open(chapter: position.chapterIndex, resume: true)
                     }
                 }
+                .buttonStyle(.bordered)
                 .disabled(book.position == nil)
                 Button("◂ Chapter") { open(chapter: max(0, chapterIndex - 1)) }
+                    .buttonStyle(.bordered)
                 Text(chapterLabel)
+                    .font(.callout)
+                    .foregroundColor(.gray)
                 Button("Chapter ▸") { open(chapter: min(chapterCount - 1, chapterIndex + 1)) }
+                    .buttonStyle(.bordered)
                 Spacer()
                 Button(showToc ? "Hide TOC" : "TOC") { showToc.toggle() }
+                    .buttonStyle(.borderless)
             }
             if showToc {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 2) {
                         ForEach(Array((book.toc ?? []).enumerated()), id: \.offset) { _, entry in
-                            Button(entry.label) {
+                            Button {
                                 if let spineIndex = entry.spineIndex {
                                     open(chapter: spineIndex)
                                 }
+                            } label: {
+                                HStack {
+                                    Text(entry.label)
+                                        .font(.callout)
+                                        .foregroundColor(entry.spineIndex == chapterIndex
+                                            ? theme.accent : .gray)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(theme.accent.opacity(entry.spineIndex == chapterIndex ? 0.12 : 0))
+                                .cornerRadius(5)
                             }
+                            .buttonStyle(.borderless)
                         }
                     }
                 }
@@ -53,15 +74,20 @@ struct BookReaderPane: View {
                 if tts.isPlaying(noteId: book.id) {
                     if tts.state == .paused {
                         Button("▶ Resume") { tts.resume() }
+                            .buttonStyle(.bordered)
                     } else {
                         Button("❙❙ Pause") { tts.pause() }
+                            .buttonStyle(.bordered)
                     }
                     Button("■ Stop") {
                         tts.stop()
                         savePosition(fraction: lastFraction)
                     }
+                    .buttonStyle(.bordered)
                 } else {
                     Button("▶ Speak chapter") { speakCurrent() }
+                        .buttonStyle(.bordered)
+                        .foregroundColor(theme.accent)
                 }
                 if let error = tts.lastError {
                     Text(error).foregroundColor(.orange)
@@ -69,14 +95,22 @@ struct BookReaderPane: View {
                 Spacer()
                 if let pos = tts.position, pos.noteId == book.id {
                     Text("\(Int((pos.fraction * 100).rounded()))%")
+                        .foregroundColor(.gray)
                 }
                 Button("🗑") {
                     tts.stop()
                     books.moveToBin(book)
                 }
+                .buttonStyle(.borderless)
             }
             if tts.isPlaying(noteId: book.id), let sentence = tts.currentSentence {
-                Text("▸ \(sentence)").foregroundColor(.gray)
+                Text("▸ \(sentence)")
+                    .font(.callout)
+                    .foregroundColor(theme.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(theme.accent.opacity(0.08))
+                    .cornerRadius(6)
             }
             if loadFailed {
                 Text("This chapter could not be extracted from the archive.")
@@ -87,12 +121,18 @@ struct BookReaderPane: View {
             } else {
                 ScrollView {
                     Text(chapterText ?? "")
+                        .font(.system(size: readerFontSize))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
-        .padding(8)
+        .padding(12)
         .task { initialOpen() }
+    }
+
+    /// Reader body text tracks the appearance text-size setting.
+    private var readerFontSize: Double {
+        16.0 * min(1.5, max(0.75, prefs.readerTextScale))
     }
 
     /// Audiobook transport: chapter picker, play/pause/stop, the audible
@@ -105,19 +145,25 @@ struct BookReaderPane: View {
                 if audio.isPlaying(bookId: book.id) {
                     if audio.state == .paused {
                         Button("▶ Resume") { audio.resume() }
+                            .buttonStyle(.bordered)
                     } else {
                         Button("❙❙ Pause") { audio.pause() }
+                            .buttonStyle(.bordered)
                     }
                     Button("■ Stop") { audio.stop() }
+                        .buttonStyle(.bordered)
                 } else {
                     Button("▶ Play") {
                         let start = resumeSeconds()
                         audio.play(book: book, chapterIndex: selectedAudioChapter, startSeconds: start)
                     }
+                    .buttonStyle(.bordered)
+                    .foregroundColor(theme.accent)
                     if resumeSeconds() > 0 {
                         Button("↩ Resume chapter \(selectedAudioChapter + 1)") {
                             audio.play(book: book, chapterIndex: selectedAudioChapter, startSeconds: resumeSeconds())
                         }
+                        .buttonStyle(.bordered)
                     }
                 }
                 if let error = audio.lastError {
@@ -126,22 +172,33 @@ struct BookReaderPane: View {
                 Spacer()
                 if let pos = audio.position, pos.bookId == book.id {
                     Text("\(Self.clock(pos.seconds)) / \(Self.clock(chapterDuration))")
+                        .foregroundColor(.gray)
                 }
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array((book.audioChapters ?? []).enumerated()), id: \.offset) { index, chapter in
                         // SwiftCrossUI on Linux has no Color.primary; the
-                        // ●/○ marker alone distinguishes the active chapter.
-                        Button(index == selectedAudioChapter
-                            ? "● \(index + 1). \(chapter.title)"
-                            : "○ \(index + 1). \(chapter.title)"
-                        ) {
+                        // accent tint distinguishes the active chapter.
+                        Button {
                             selectedAudioChapter = index
                             if audio.isPlaying(bookId: book.id) {
                                 audio.play(book: book, chapterIndex: index, startSeconds: chapter.startSeconds)
                             }
+                        } label: {
+                            HStack {
+                                Text("\(index + 1). \(chapter.title)")
+                                    .font(.callout)
+                                    .foregroundColor(index == selectedAudioChapter
+                                        ? theme.accent : .gray)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(theme.accent.opacity(index == selectedAudioChapter ? 0.12 : 0))
+                            .cornerRadius(5)
                         }
+                        .buttonStyle(.borderless)
                     }
                 }
             }
