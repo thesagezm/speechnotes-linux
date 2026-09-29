@@ -205,4 +205,63 @@ final class AudioBookTests: XCTestCase {
         )
         XCTAssertLessThan(Date().timeIntervalSince(started), 3, "stop flags end the loop promptly")
     }
+
+    /// Nero-style chpl: 4-byte count layout — the divisor must be picked by
+    /// plausibility against the duration, and a mid-box tail slice must
+    /// still yield chapters via the signature scan.
+    func testChplNeroVariantAndTailScan() throws {
+        func chplAtom(startsRaw: [Int], titles: [String], fourByteCount: Bool) -> [UInt8] {
+            var bytes: [UInt8] = [0x00, 0x00, 0x00, 0x00] // version+flags / reserved
+            if fourByteCount {
+                bytes.append(UInt8(startsRaw.count >> 24))
+                bytes.append(UInt8((startsRaw.count >> 16) & 0xFF))
+                bytes.append(UInt8((startsRaw.count >> 8) & 0xFF))
+                bytes.append(UInt8(startsRaw.count & 0xFF))
+            } else {
+                bytes += [0x00, 0x00, 0x00] // reserved
+                bytes.append(UInt8(startsRaw.count))
+            }
+            for (start, title) in zip(startsRaw, titles) {
+                for shift in stride(from: 56, through: 0, by: -8) {
+                    bytes.append(UInt8((start >> shift) & 0xFF))
+                }
+                bytes.append(UInt8(title.utf8.count))
+                bytes += Array(title.utf8)
+            }
+            return bytes
+        }
+
+        // Nero layout in 100-ns units: a 600 s book with a chapter at 60 s.
+        // Wrapped as moov/chpl boxes — chaptersFromMP4 walks containers.
+        let neroPayload = chplAtom(startsRaw: [0, 600_000_000], titles: ["One", "Two"], fourByteCount: true)
+        func box(_ type: String, _ payload: [UInt8]) -> [UInt8] {
+            var out: [UInt8] = [
+                UInt8((8 + payload.count) >> 24), UInt8(((8 + payload.count) >> 16) & 0xFF),
+                UInt8(((8 + payload.count) >> 8) & 0xFF), UInt8((8 + payload.count) & 0xFF),
+            ]
+            out += Array(type.utf8)
+            out += payload
+            return out
+        }
+        let parsed = AudiobookChapters.chaptersFromMP4(Data(box("moov", box("chpl", neroPayload))), totalSeconds: 600)
+        XCTAssertEqual(parsed.count, 2, "nero count variant parses")
+        XCTAssertEqual(parsed[1].startSeconds, 60.0, accuracy: 0.01, "100 ns reading chosen")
+
+        // The same payload embedded mid-box inside a tail slice (no box
+        // boundary at the slice start) — the signature scan finds it.
+        var tail = [UInt8](repeating: 0xAB, count: 500)
+        tail.append(contentsOf: Array("chpl".utf8))
+        tail.append(contentsOf: neroPayload)
+        let fromTail = AudiobookChapters.chaptersFromMP4Tail(Data(tail), totalSeconds: 600)
+        XCTAssertEqual(fromTail.count, 2, "signature scan recovers chpl mid-box")
+
+        // Milliseconds file: max start 300_000 raw is 0.03 s in 100 ns and
+        // 300 s in ms; duration 320 s → the ms reading wins.
+        let msPayload = chplAtom(startsRaw: [0, 300_000], titles: ["A", "B"], fourByteCount: false)
+        let parsedMs = AudiobookChapters.chaptersFromMP4(
+            Data(box("moov", box("chpl", msPayload))), totalSeconds: 320
+        )
+        XCTAssertEqual(parsedMs.count, 2)
+        XCTAssertEqual(parsedMs[1].startSeconds, 300.0, accuracy: 0.01, "ms reading wins by plausibility")
+    }
 }

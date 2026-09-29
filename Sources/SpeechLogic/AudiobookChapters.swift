@@ -45,10 +45,10 @@ public enum AudiobookChapters {
     /// Chapters from an MP4-family container (`.m4b`, `.m4a`, `.mp4`).
     ///
     /// Walks the top-level box tree looking for `moov`, then reads the `chpl`
-    /// atom inside it. The chpl timestamps' unit is encoder-dependent —
-    /// ffmpeg writes 100-nanosecond units, legacy Nero wrote centiseconds —
-    /// so both interpretations are tried against `totalSeconds` and the one
-    /// that lands inside the file's duration wins.
+    /// atom inside it (directly under moov, or one level down in moov/udta —
+    /// ffmpeg nests it there; Nero encoders don't). The timestamps' unit is
+    /// encoder-dependent, so the reading is chosen by plausibility against
+    /// `totalSeconds` — same semantics as the iOS app's post-fix parser.
     public static func chaptersFromMP4(_ data: Data, totalSeconds: Double) -> [AudioChapter] {
         var chplPayload: Range<Int>?
         forEachBox(in: data, range: 0..<data.count) { type, payload in
@@ -57,23 +57,37 @@ public enum AudiobookChapters {
                 if innerType == "chpl" {
                     chplPayload = innerPayload
                 } else if innerType == "udta" {
-                    // ffmpeg nests chpl inside moov/udta; Nero encoders put
-                    // it directly under moov. One extra level covers both.
                     forEachBox(in: data, range: innerPayload) { deepType, deepPayload in
                         if deepType == "chpl" { chplPayload = deepPayload }
                     }
                 }
             }
         }
-        guard let chplPayload else { return [] }
-        let bytes = Array(data[chplPayload])
-        // Divisor ladder: 100 ns (ffmpeg v1), centiseconds (legacy Nero v0).
-        // The first reading that fits inside the file's duration is the one.
-        for divisor in [10_000_000.0, 100.0] {
-            let chapters = parseChpl(bytes, unitDivisor: divisor)
-            guard let normalized = normalize(chapters, totalSeconds: totalSeconds),
-                  !normalized.isEmpty else { continue }
-            return normalized
+        guard let chplPayload else {
+            return chaptersFromMP4Tail(data, totalSeconds: totalSeconds)
+        }
+        let chapters = parseChpl(Array(data[chplPayload]), totalSeconds: totalSeconds)
+        guard let normalized = normalize(chapters, totalSeconds: totalSeconds), !normalized.isEmpty else {
+            return []
+        }
+        return normalized
+    }
+
+    /// `chaptersFromMP4` over a slice that does NOT start on a box boundary
+    /// (a tail slice whose first bytes sit mid-mdat — plain-ffmpeg M4Bs put
+    /// moov at the very end). Walks the payload for a `chpl` atom by
+    /// signature; chpl's own structure (count + starts + Pascal titles)
+    /// validates the hit.
+    public static func chaptersFromMP4Tail(_ data: Data, totalSeconds: Double) -> [AudioChapter] {
+        let bytes = Array(data)
+        let signature = Array("chpl".utf8)
+        var cursor = 0
+        while let hit = bytes.firstRange(of: signature, in: cursor..<bytes.count) {
+            let chapters = parseChpl(Array(bytes[hit.upperBound...]), totalSeconds: totalSeconds)
+            if !chapters.isEmpty {
+                return normalize(chapters, totalSeconds: totalSeconds) ?? chapters
+            }
+            cursor = hit.upperBound
         }
         return []
     }
@@ -163,33 +177,87 @@ public enum AudiobookChapters {
 
     // MARK: - chpl
 
-    /// `chpl` payload: version+flags (4), reserved (4), chapter count (1),
-    /// then per chapter an 8-byte big-endian start and a Pascal string
-    /// title. `unitDivisor` converts raw starts to seconds — see the caller's
-    /// ladder for why it is caller-supplied, not assumed.
-    private static func parseChpl(_ bytes: [UInt8], unitDivisor: Double) -> [AudioChapter] {
-        guard bytes.count >= 9 else { return [] }
-        let count = Int(bytes[8])
-        var cursor = 9
+    /// `chpl` payload reader. Two real-world layouts exist:
+    ///   * Nero spec — a 4-byte count at offset 4, entries from offset 8;
+    ///   * ffmpeg — 4 bytes of version/flags/reserved, a 1-byte count at
+    ///     offset 8, entries from offset 9.
+    /// Both are parsed and the first with entries wins. The entries' unit is
+    /// encoder-dependent (ffmpeg writes 100-ns units; other tools wrote
+    /// milliseconds), so with a known duration the divisor is the plausible
+    /// one CLOSEST to the book's length; without one, 100 ns (what both
+    /// ffmpeg and modern Nero files carry — the "VLC saw chapters we didn't"
+    /// lesson from the iOS port).
+    private static func parseChpl(_ bytes: [UInt8], totalSeconds: Double?) -> [AudioChapter] {
+        func entries(count: Int, cursor: Int) -> (starts: [Int], titles: [String]) {
+            var starts: [Int] = []
+            var titles: [String] = []
+            var cursor = cursor
+            for _ in 0..<count {
+                guard cursor + 9 <= bytes.count else { break }
+                var start = 0
+                for shift in stride(from: 56, through: 0, by: -8) {
+                    start |= Int(bytes[cursor]) << shift
+                    cursor += 1
+                }
+                let titleLength = Int(bytes[cursor])
+                cursor += 1
+                guard cursor + titleLength <= bytes.count else { break }
+                let title = String(
+                    bytes: bytes[cursor..<(cursor + titleLength)],
+                    encoding: .utf8
+                ) ?? ""
+                cursor += titleLength
+                starts.append(start)
+                titles.append(title.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            return (starts, titles)
+        }
+
+        var candidates: [(starts: [Int], titles: [String])] = []
+        // Variant A — the 4-byte Nero count.
+        if bytes.count >= 8 {
+            let count = Int(bytes[4]) << 24 | Int(bytes[5]) << 16
+                | Int(bytes[6]) << 8 | Int(bytes[7])
+            if count > 0, count < 10_000 {
+                let parsed = entries(count: count, cursor: 8)
+                if !parsed.starts.isEmpty { candidates.append(parsed) }
+            }
+        }
+        // Variant B — ffmpeg's 1-byte count after 4 zero bytes.
+        if candidates.isEmpty, bytes.count >= 9 {
+            let count = Int(bytes[8])
+            if count > 0, count < 255 {
+                let parsed = entries(count: count, cursor: 9)
+                if !parsed.starts.isEmpty { candidates.append(parsed) }
+            }
+        }
+        guard let (rawStarts, titles) = candidates.first, !rawStarts.isEmpty else { return [] }
+
+        let maxStart = rawStarts.max() ?? 0
+        let divisor: Double
+        if let total = totalSeconds, total > 0 {
+            let nsSeconds = Double(maxStart) / 10_000_000
+            let msSeconds = Double(maxStart) / 1_000
+            let nsFits = nsSeconds <= total * 2
+            let msFits = msSeconds <= total * 2
+            switch (nsFits, msFits) {
+            case (true, true):
+                divisor = abs(nsSeconds - total) <= abs(msSeconds - total) ? 10_000_000 : 1_000
+            case (false, true):
+                divisor = 1_000
+            default:
+                divisor = 10_000_000
+            }
+        } else {
+            divisor = 10_000_000
+        }
+
         var chapters: [AudioChapter] = []
-        for _ in 0..<count {
-            guard cursor + 9 <= bytes.count else { break }
-            let rawStart = Int(bytes[cursor]) << 56 | Int(bytes[cursor + 1]) << 48
-                | Int(bytes[cursor + 2]) << 40 | Int(bytes[cursor + 3]) << 32
-                | Int(bytes[cursor + 4]) << 24 | Int(bytes[cursor + 5]) << 16
-                | Int(bytes[cursor + 6]) << 8 | Int(bytes[cursor + 7])
-            cursor += 8
-            let titleLength = Int(bytes[cursor])
-            cursor += 1
-            guard cursor + titleLength <= bytes.count else { break }
-            let title = String(
-                bytes: bytes[cursor..<(cursor + titleLength)],
-                encoding: .utf8
-            ) ?? ""
-            cursor += titleLength
+        chapters.reserveCapacity(rawStarts.count)
+        for (index, rawStart) in rawStarts.enumerated() {
             chapters.append(AudioChapter(
-                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                startSeconds: Double(rawStart) / unitDivisor,
+                title: titles[index],
+                startSeconds: Double(rawStart) / divisor,
                 endSeconds: 0
             ))
         }
