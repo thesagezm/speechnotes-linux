@@ -25,6 +25,7 @@ struct SettingsPane: View {
                     case .espeak: prefs.engineKind = EngineKind.piper.rawValue
                     case .piper: prefs.engineKind = EngineKind.kokoro.rawValue
                     case .kokoro: prefs.engineKind = EngineKind.supertonic.rawValue
+                    case .supertonic: prefs.engineKind = EngineKind.pico.rawValue
                     default: prefs.engineKind = EngineKind.espeak.rawValue
                     }
                 }

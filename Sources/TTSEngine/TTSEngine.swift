@@ -169,7 +169,9 @@ public enum EngineFactory {
             }
             return engine
         case .pico:
-            throw TTSError.engineNotAvailable(kind)
+            // The distro's pico2wave CLI is the "model"; play() soft-fails
+            // when the box lacks it.
+            return PicoEngine()
         }
     }
 }

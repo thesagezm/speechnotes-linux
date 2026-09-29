@@ -80,11 +80,9 @@ final class TTSEngineTests: XCTestCase {
     }
 
     func testEngineFactoryRefusesMissingEngines() {
-        // pico is the only engine with no implementation; espeak, piper,
-        // kokoro and supertonic construct even without their model files —
-        // play() surfaces "not ready" as a soft error rather than throwing
-        // at the factory.
-        XCTAssertThrowsError(try EngineFactory.make(kind: .pico))
+        // Every engine constructs now; play() surfaces "not ready" as a
+        // soft error rather than throwing at the factory.
+        XCTAssertNoThrow(try EngineFactory.make(kind: .pico))
         XCTAssertNoThrow(try EngineFactory.make(kind: .espeak))
         XCTAssertNoThrow(try EngineFactory.make(kind: .kokoro))
         XCTAssertNoThrow(try EngineFactory.make(kind: .supertonic))
@@ -248,6 +246,32 @@ final class TTSEngineTests: XCTestCase {
         XCTAssertEqual(wavRate, 44_100)
         // One short sentence at 44.1 kHz — well over a second of audio.
         XCTAssertGreaterThan(samples.count, 44_100, "one sentence of 44.1 kHz audio")
+        XCTAssertTrue(samples.contains { abs(Int32($0)) > 1_000 }, "waveform is not silence")
+    }
+
+    /// Full Pico path — skipped unless the distro ships pico2wave.
+    func testPicoSynthesisIfToolInstalled() throws {
+        guard PicoEngine.toolAvailable else {
+            throw XCTSkip("no pico2wave on this box")
+        }
+        let engine = PicoEngine()
+        XCTAssertTrue(engine.createModel(modelPath: "/usr", modelId: "pico"))
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("pico-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let rate = try engine.encodeSpeechImpl(
+            text: "Hello from Pico.",
+            speed: 1.0,
+            outFile: url,
+            abort: { false }
+        )
+        // Pico's output rate is whatever the distro build ships (16 kHz
+        // here) — the engine re-emits whatever the tool wrote.
+        XCTAssertEqual(rate, 16_000)
+        let (samples, wavRate) = try WAVFile.read(at: url)
+        XCTAssertEqual(wavRate, 16_000)
+        XCTAssertGreaterThan(samples.count, 16_000, "one sentence of 16 kHz audio")
         XCTAssertTrue(samples.contains { abs(Int32($0)) > 1_000 }, "waveform is not silence")
     }
 
