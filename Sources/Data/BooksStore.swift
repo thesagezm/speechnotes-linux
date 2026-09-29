@@ -233,16 +233,43 @@ public final class BooksStore: ObservableObject {
         return book
     }
 
-    /// Filled in by the PDF phase (poppler-backed); the stub keeps the
-    /// manifest shape honest until then.
+    /// PDF manifest: metadata + page count via pdfinfo, chapter floor via
+    /// page-range grouping (poppler exposes no outline), cover = page 1
+    /// rendered by pdftoppm. Degraded imports stay books, never dead.
     nonisolated static func buildPdfManifest(id: UUID, originalFileName: String, directory: URL) -> Book {
-        Book(
-            id: id,
-            title: (originalFileName as NSString).deletingPathExtension.replacingOccurrences(of: "_", with: " "),
-            format: .pdf,
-            originalFileName: originalFileName,
-            importError: "PDF support is not wired yet."
-        )
+        let fallbackTitle = (originalFileName as NSString)
+            .deletingPathExtension
+            .replacingOccurrences(of: "_", with: " ")
+        var book = Book(id: id, title: fallbackTitle, format: .pdf, originalFileName: originalFileName)
+
+        guard PdfTextLinux.isAvailable else {
+            book.importError = "poppler-utils (pdftotext/pdfinfo) not installed — PDF text unavailable."
+            return book
+        }
+        let pdfPath = directory.appendingPathComponent("original.pdf").path
+        let info = PdfTextLinux.documentInfo(pdfPath: pdfPath)
+        guard info.pageCount > 0 else {
+            book.importError = "This PDF could not be read (encrypted or malformed)."
+            return book
+        }
+        if let title = info.title { book.title = title }
+        if let author = info.author { book.author = author }
+        book.pageCount = info.pageCount
+        let chapters = PdfTextLinux.fallbackChapters(pageCount: info.pageCount)
+        book.pdfChapters = chapters
+        book.pdfChapterSource = "pages"
+
+        let coverPrefix = directory.appendingPathComponent("cover")
+        _ = PdfTextLinux.run(PdfTextLinux.pdftoppmPath, [
+            "-f", "1", "-l", "1", "-singlefile",
+            "-jpeg", "-jpegopt", "quality=85",
+            pdfPath, coverPrefix.path,
+        ])
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent("cover.jpg").path),
+           (attrs[.size] as? Int64 ?? 0) > 1_000 {
+            book.hasCover = true
+        }
+        return book
     }
 
     /// Audiobook manifest: duration + tags via ffprobe, chapters from the
