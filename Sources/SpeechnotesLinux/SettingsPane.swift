@@ -1,6 +1,7 @@
 import Foundation
 import SwiftCrossUI
 import Data
+import SpeechLogic
 import TTSEngine
 
 /// Preferences (Prefs parity): speech toggles and rate, plus a save-now
@@ -12,6 +13,8 @@ struct SettingsPane: View {
     let notebooks: NotebooksStore
 
     @State private var piperStatus = ""
+    @Environment(\.chooseFile) private var chooseFile
+    @Environment(\.chooseFileSaveDestination) private var chooseFileSaveDestination
 
     var body: some View {
         VStack(spacing: 12) {
@@ -90,6 +93,18 @@ struct SettingsPane: View {
                 }
                 Spacer()
             }
+            HStack(spacing: 8) {
+                Button("Export library (JEX)…") {
+                    Task { await exportLibrary() }
+                }
+                Button("Import JEX…") {
+                    Task { await importJex() }
+                }
+                Spacer()
+            }
+            if let status = jexStatus {
+                Text(status).foregroundColor(.gray)
+            }
             Spacer()
             HStack(spacing: 8) {
                 Text(stats)
@@ -97,6 +112,40 @@ struct SettingsPane: View {
             }
         }
         .padding(12)
+    }
+
+    @State private var jexStatus: String?
+
+    private func exportLibrary() async {
+        guard let url = await chooseFileSaveDestination(
+            title: "Export library as JEX",
+            defaultButtonLabel: "Export",
+            defaultFileName: "speechnotes.jex"
+        ) else { return }
+        do {
+            let payloads = JexPayloads.payloads(notes: notes.notes, notebooks: notebooks.notebooks)
+            let data = try JexExport.buildArchive(notes: payloads.notes, notebooks: payloads.notebooks)
+            try data.write(to: url, options: .atomic)
+            jexStatus = "Exported \(notes.notes.count) note(s) → \(url.lastPathComponent)"
+        } catch {
+            jexStatus = "Export failed: \(error)"
+        }
+    }
+
+    private func importJex() async {
+        guard let url = await chooseFile(
+            title: "Import JEX",
+            message: "Joplin-compatible archive",
+            defaultButtonLabel: "Import"
+        ) else { return }
+        do {
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            let outcome = try JexImporter.importArchive(data: data, into: notes, notebooksStore: notebooks)
+            jexStatus = "Imported \(outcome.notesCreated) note(s), \(outcome.notebooksCreated) notebook(s)"
+                + (outcome.notesSkipped > 0 ? ", \(outcome.notesSkipped) skipped" : "")
+        } catch {
+            jexStatus = "\(error)"
+        }
     }
 
     private var stats: String {

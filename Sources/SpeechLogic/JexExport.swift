@@ -132,7 +132,10 @@ public enum JexExport {
 
     private static func noteEntry(_ note: NotePayload) -> (name: String, data: Data) {
         var fields: [(String, String)] = [
-            ("id", note.id)
+            ("id", note.id),
+            // Joplin carries the title in the metadata block — without it
+            // round-trips restore untitled notes.
+            ("title", note.title),
         ]
         if let parent = note.notebookId { fields.append(("parent_id", parent)) }
         fields.append(("created_time", iso(note.createdAt)))

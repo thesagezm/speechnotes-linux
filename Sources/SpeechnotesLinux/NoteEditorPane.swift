@@ -1,6 +1,7 @@
 import Foundation
 import SwiftCrossUI
 import Data
+import AppPaths
 import TTSEngine
 
 /// The note editor: optional explicit title, the body TextEditor, the
@@ -47,6 +48,13 @@ struct NoteEditorPane: View {
                     tts.stop()
                     notes.delete(noteId: note.id)
                 }
+                Button("⤓ WAV") {
+                    exportStatus = "rendering…"
+                    Task { await renderWav() }
+                }
+            }
+            if let status = exportStatus {
+                Text(status).foregroundColor(.gray)
             }
             if tts.isPlaying(noteId: note.id), let sentence = tts.currentSentence {
                 Text("▸ \(sentence)")
@@ -70,6 +78,54 @@ struct NoteEditorPane: View {
             parts.append("last TTS error: \(error)")
         }
         return parts.joined(separator: " · ")
+    }
+
+    @State private var exportStatus: String?
+
+    /// Renders the whole note to one WAV under Exports/ — chunk → synthesize
+    /// → concatenate, mirroring the iOS renderWAV flow. Soft-fails like the
+    /// tier: a failed render leaves a status line, never a crash.
+    private func renderWav() async {
+        let engineKind = EngineKind(rawValue: prefs.engineKind) ?? .espeak
+        let speed = Float(prefs.rateMultiplier)
+        let text = notes.allNotes.first(where: { $0.id == note.id })?.text ?? note.text
+        let chunks = TTSChunker.planChunks(noteId: note.id, text: text)
+        guard !chunks.isEmpty else {
+            exportStatus = "nothing to render"
+            return
+        }
+        let outDir = AppPaths.exportsDir
+        try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        let safeTitle = note.title.replacingOccurrences(of: "/", with: "-")
+        let outFile = outDir.appendingPathComponent("\(safeTitle.prefix(60)).wav")
+
+        let result: Result<Int, Error> = await Task.detached(priority: .userInitiated) {
+            let engine = try EngineFactory.make(kind: engineKind)
+            guard engine.modelCreated() else {
+                throw TTSError.synthesisFailed("\(engineKind.displayName) is not ready")
+            }
+            var all: [Int16] = []
+            var rate = 22_050
+            for chunk in chunks {
+                let wavURL = TTSChunker.cacheFile(noteId: note.id, index: chunk.index)
+                _ = try engine.encodeSpeechImpl(
+                    text: chunk.text, speed: speed, outFile: wavURL, abort: { false }
+                )
+                let (samples, chunkRate) = try WAVFile.read(at: wavURL)
+                rate = chunkRate
+                all.append(contentsOf: samples)
+                try? FileManager.default.removeItem(at: wavURL)
+            }
+            try WAVFile.write(samples: all, sampleRate: rate, to: outFile)
+            return rate
+        }.result
+
+        switch result {
+        case .success:
+            exportStatus = "rendered → Exports/\(outFile.lastPathComponent)"
+        case .failure(let error):
+            exportStatus = "render failed: \(error)"
+        }
     }
 
     /// Writes through the store so every keystroke bumps updatedAt and hits

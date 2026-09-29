@@ -65,7 +65,14 @@ public final class NotesStore: ObservableObject {
 
     @discardableResult
     public func createNote(notebookId: UUID? = nil) -> Note {
+        createNote(id: UUID(), notebookId: notebookId)
+    }
+
+    /// JEX import path: reuse the exported id when it is free.
+    @discardableResult
+    public func createNote(id: UUID, notebookId: UUID? = nil) -> Note {
         var note = Note()
+        note.id = id
         note.notebookId = notebookId
         allNotes.insert(note, at: 0)
         bumpVersion()
