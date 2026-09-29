@@ -25,7 +25,7 @@ import Foundation
 /// What the container says about one chapter. Times are in SECONDS (fractional
 /// where the container gives milliseconds) so the app can map playback time to
 /// a chapter without knowing the container's native units.
-public struct AudioChapter: Codable, Equatable, Hashable {
+public struct AudioChapter: Codable, Equatable, Hashable, Sendable {
     public var title: String
     public var startSeconds: Double
     public var endSeconds: Double

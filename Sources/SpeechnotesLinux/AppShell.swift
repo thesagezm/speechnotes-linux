@@ -12,9 +12,11 @@ struct AppShell: View {
     @State private var notebooks = NotebooksStore.shared
     @State private var prefs = Prefs.shared
     @State private var tts = TTSController.shared
+    @State private var books = BooksStore.shared
 
     @State private var pane: Pane = .notes
     @State private var selectedNoteId: UUID?
+    @State private var selectedBookId: UUID?
     @State private var searchText = ""
     @State private var newNotebookName = ""
     @State private var resumeCandidate: ResumeCandidate?
@@ -28,6 +30,7 @@ struct AppShell: View {
 
     enum Pane: Equatable {
         case notes
+        case books
         case recycleBin
         case settings
     }
@@ -78,6 +81,10 @@ struct AppShell: View {
                 }
             }
             Divider()
+            sidebarButton(title: "Books", isActive: pane == .books) {
+                pane = .books
+                books.refresh()
+            }
             sidebarButton(title: "Recycle Bin", isActive: pane == .recycleBin) {
                 pane = .recycleBin
             }
@@ -140,6 +147,10 @@ struct AppShell: View {
                     searchText: $searchText
                 )
             }
+        } else if pane == .books {
+            BooksPane(books: books) { book in
+                selectedBookId = book.id
+            }
         } else if pane == .recycleBin {
             RecycleBinPane(notes: notes)
         } else {
@@ -155,6 +166,13 @@ struct AppShell: View {
                 NoteEditorPane(note: note, notes: notes)
             } else {
                 placeholder(title: "No note selected", detail: "Create or pick a note in the list.")
+            }
+        } else if pane == .books {
+            if let id = selectedBookId,
+               let book = books.allBooks.first(where: { $0.id == id }) {
+                BookReaderPane(book: book, books: books)
+            } else {
+                placeholder(title: "No book selected", detail: "Import or pick a book in the shelf.")
             }
         } else if pane == .recycleBin {
             placeholder(

@@ -26,6 +26,9 @@ public final class TTSController: ObservableObject {
     private var flags = ControlFlags()
     private var worker: Task<Void, Never>?
     private var playingNoteId: UUID?
+    /// Where this run persists its resume position — "note:<uuid>" for
+    /// notes, "book:<uuid>:<chapter>" for book chapters. Set per run.
+    private var activeBookmarkKey: String?
 
     private init() {}
 
@@ -46,10 +49,32 @@ public final class TTSController: ObservableObject {
         voice: String,
         resumeFromUTF16: Int = 0
     ) {
+        playText(
+            id: note.id,
+            text: note.text,
+            engineKind: engineKind,
+            speed: speed,
+            voice: voice,
+            resumeFromUTF16: resumeFromUTF16,
+            bookmarkKey: BookmarkStore.noteKey(note.id)
+        )
+    }
+
+    /// Speaks arbitrary text (book chapters, imports) under any bookmark
+    /// key. Same soft-fail contract as `play(note:)`.
+    public func playText(
+        id: UUID,
+        text: String,
+        engineKind: EngineKind,
+        speed: Float,
+        voice: String,
+        resumeFromUTF16: Int = 0,
+        bookmarkKey: String
+    ) {
         stop()
         let chunks = TTSChunker.planChunks(
-            noteId: note.id,
-            text: note.text,
+            noteId: id,
+            text: text,
             resumeFromUTF16: resumeFromUTF16
         )
         guard !chunks.isEmpty else { return }
@@ -73,22 +98,23 @@ public final class TTSController: ObservableObject {
 
         // Cached chunk WAVs are keyed by index; a resume renumbers chunks, so
         // start every run from a clean cache (synthesis is cheap on this tier).
-        TTSChunker.clearCache(noteId: note.id)
+        TTSChunker.clearCache(noteId: id)
 
         let flags = ControlFlags()
         self.flags = flags
-        playingNoteId = note.id
+        activeBookmarkKey = bookmarkKey
+        playingNoteId = id
         state = .speaking
         position = nil
         currentSentence = nil
-        let noteId = note.id
         worker = Task.detached(priority: .userInitiated) { [weak self] in
             await self?.runPipeline(
                 chunks: chunks,
                 engine: engine,
                 flags: flags,
-                noteId: noteId,
-                speed: speed
+                noteId: id,
+                speed: speed,
+                bookmarkKey: bookmarkKey
             )
         }
     }
@@ -98,9 +124,9 @@ public final class TTSController: ObservableObject {
         worker?.cancel()
         worker = nil
         // A manual stop keeps the position — that's what Resume plays from.
-        if let pos = position {
+        if let pos = position, let key = activeBookmarkKey {
             BookmarkStore.shared.set(
-                BookmarkStore.noteKey(pos.noteId),
+                key,
                 PlaybackBookmark(noteId: pos.noteId, textOffset: pos.textOffset)
             )
         }
@@ -108,6 +134,7 @@ public final class TTSController: ObservableObject {
         position = nil
         currentSentence = nil
         playingNoteId = nil
+        activeBookmarkKey = nil
     }
 
     public func pause() {
@@ -130,7 +157,8 @@ public final class TTSController: ObservableObject {
         engine: TTSEngineBase,
         flags: ControlFlags,
         noteId: UUID,
-        speed: Float
+        speed: Float,
+        bookmarkKey: String
     ) async {
         let player = TTSPlayer()
         defer { player.close() }
@@ -167,7 +195,7 @@ public final class TTSController: ObservableObject {
                             // guaranteed trailing write — safe to call
                             // on every tick.
                             BookmarkStore.shared.set(
-                                BookmarkStore.noteKey(noteId),
+                                bookmarkKey,
                                 PlaybackBookmark(noteId: noteId, textOffset: offset)
                             )
                         }
@@ -179,7 +207,7 @@ public final class TTSController: ObservableObject {
             }
         }
 
-        await self.pipelineDone(noteId: noteId, clean: !flags.isStopped)
+        await self.pipelineDone(noteId: noteId, bookmarkKey: bookmarkKey, clean: !flags.isStopped)
     }
 
     private func setSentence(_ text: String) {
@@ -188,15 +216,16 @@ public final class TTSController: ObservableObject {
 
     /// Natural end of the queue. Guards on the note id so a replaced worker
     /// limping home can't clobber a NEW run's state or bookmark.
-    private func pipelineDone(noteId: UUID, clean: Bool) {
+    private func pipelineDone(noteId: UUID, bookmarkKey: String, clean: Bool) {
         guard playingNoteId == noteId else { return }
         if clean {
             // Played to the end — the resume bookmark served its purpose.
-            BookmarkStore.shared.removeAll(forNote: noteId)
+            BookmarkStore.shared.remove(bookmarkKey)
         }
         state = .idle
         position = nil
         currentSentence = nil
         playingNoteId = nil
+        activeBookmarkKey = nil
     }
 }

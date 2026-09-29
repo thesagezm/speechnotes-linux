@@ -164,7 +164,10 @@ let package = Package(
         ),
         .testTarget(
             name: "DataTests",
-            dependencies: ["Data", "AppPaths"]
+            dependencies: ["Data", "AppPaths"],
+            resources: [
+                .copy("Fixtures")
+            ]
         )
     ]
 )
