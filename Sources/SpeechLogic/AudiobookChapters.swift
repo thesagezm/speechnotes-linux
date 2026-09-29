@@ -45,21 +45,37 @@ public enum AudiobookChapters {
     /// Chapters from an MP4-family container (`.m4b`, `.m4a`, `.mp4`).
     ///
     /// Walks the top-level box tree looking for `moov`, then reads the `chpl`
-    /// atom inside it — the form most M4B encoders actually write, and the one
-    /// this parser implements. A full chapter *track* (a text `trak` with a
-    /// sample table) needs the entire sample table read and is NOT implemented:
-    /// `Docs/PLAN-AUDIOBOOKS.md` records that as the next step if a device report
-    /// turns up an M4B with a track and no `chpl`.
+    /// atom inside it. The chpl timestamps' unit is encoder-dependent —
+    /// ffmpeg writes 100-nanosecond units, legacy Nero wrote centiseconds —
+    /// so both interpretations are tried against `totalSeconds` and the one
+    /// that lands inside the file's duration wins.
     public static func chaptersFromMP4(_ data: Data, totalSeconds: Double) -> [AudioChapter] {
-        var found: [AudioChapter] = []
+        var chplPayload: Range<Int>?
         forEachBox(in: data, range: 0..<data.count) { type, payload in
             guard type == "moov" else { return }
-            found = chaptersFromMoov(data, range: payload) ?? []
+            forEachBox(in: data, range: payload) { innerType, innerPayload in
+                if innerType == "chpl" {
+                    chplPayload = innerPayload
+                } else if innerType == "udta" {
+                    // ffmpeg nests chpl inside moov/udta; Nero encoders put
+                    // it directly under moov. One extra level covers both.
+                    forEachBox(in: data, range: innerPayload) { deepType, deepPayload in
+                        if deepType == "chpl" { chplPayload = deepPayload }
+                    }
+                }
+            }
         }
-        guard let chapters = normalize(found, totalSeconds: totalSeconds), !chapters.isEmpty else {
-            return []
+        guard let chplPayload else { return [] }
+        let bytes = Array(data[chplPayload])
+        // Divisor ladder: 100 ns (ffmpeg v1), centiseconds (legacy Nero v0).
+        // The first reading that fits inside the file's duration is the one.
+        for divisor in [10_000_000.0, 100.0] {
+            let chapters = parseChpl(bytes, unitDivisor: divisor)
+            guard let normalized = normalize(chapters, totalSeconds: totalSeconds),
+                  !normalized.isEmpty else { continue }
+            return normalized
         }
-        return chapters
+        return []
     }
 
     /// Chapters from ID3v2 `CHAP` frames (MP3). `CTOC` is read only to learn
@@ -145,29 +161,13 @@ public enum AudiobookChapters {
         }
     }
 
-    private static func chaptersFromMoov(_ data: Data, range: Range<Int>) -> [AudioChapter]? {
-        // `chpl` is the simple, widely written form — prefer it when present.
-        var chplPayload: Range<Int>?
-        forEachBox(in: data, range: range) { type, payload in
-            if type == "chpl" { chplPayload = payload }
-        }
-        if let chplPayload {
-            let chapters = parseChpl(Array(data[chplPayload]))
-            if !chapters.isEmpty { return chapters }
-        }
-        // A real chapter TRACK needs a timescale and a sample table read in
-        // full; that work is deferred until a device report shows an M4B in
-        // the wild without `chpl` (see Docs/PLAN-AUDIOBOOKS.md).
-        return nil
-    }
-
     // MARK: - chpl
 
-    /// https://developer.apple.com/documentation/quicktime-file-format —
     /// `chpl` payload: version+flags (4), reserved (4), chapter count (1),
-    /// then per chapter an 8-byte start (in the movie timescale, usually
-    /// 1/100 s but read from `mvhd` when we can) and a Pascal string title.
-    private static func parseChpl(_ bytes: [UInt8]) -> [AudioChapter] {
+    /// then per chapter an 8-byte big-endian start and a Pascal string
+    /// title. `unitDivisor` converts raw starts to seconds — see the caller's
+    /// ladder for why it is caller-supplied, not assumed.
+    private static func parseChpl(_ bytes: [UInt8], unitDivisor: Double) -> [AudioChapter] {
         guard bytes.count >= 9 else { return [] }
         let count = Int(bytes[8])
         var cursor = 9
@@ -189,7 +189,7 @@ public enum AudiobookChapters {
             cursor += titleLength
             chapters.append(AudioChapter(
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                startSeconds: Double(rawStart) / 100.0,
+                startSeconds: Double(rawStart) / unitDivisor,
                 endSeconds: 0
             ))
         }

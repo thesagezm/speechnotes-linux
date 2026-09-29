@@ -245,16 +245,148 @@ public final class BooksStore: ObservableObject {
         )
     }
 
-    /// Filled in by the audiobook phase; the stub keeps the manifest shape
-    /// honest until then.
+    /// Audiobook manifest: duration + tags via ffprobe, chapters from the
+    /// file's own metadata (chpl atom for the MP4 family, ID3 CHAP frames
+    /// for MP3), cover art via ffmpeg. All CLI-driven — the box's ffmpeg is
+    /// the decoder of record. Chapters missing → one implicit chapter so
+    /// the player always has navigable units (source "single").
     nonisolated static func buildAudioManifest(id: UUID, originalFileName: String, directory: URL) -> Book {
-        Book(
-            id: id,
-            title: (originalFileName as NSString).deletingPathExtension.replacingOccurrences(of: "_", with: " "),
-            format: .audio,
-            originalFileName: originalFileName,
-            importError: "Audiobook support is not wired yet."
+        let fallbackTitle = (originalFileName as NSString)
+            .deletingPathExtension
+            .replacingOccurrences(of: "_", with: " ")
+        var book = Book(id: id, title: fallbackTitle, format: .audio, originalFileName: originalFileName)
+
+        // The file kept its true extension at copy time.
+        let fileURL: URL = {
+            for ext in ["m4b", "m4a", "mp3", "mp4"] {
+                let candidate = directory.appendingPathComponent("original.\(ext)")
+                if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            }
+            return directory.appendingPathComponent("original.audio")
+        }()
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            book.importError = "The audio file could not be found."
+            return book
+        }
+
+        // Duration + tags: one ffprobe call, flat key=value output.
+        let probe = Self.runTool(
+            BookAudioPlayerBridge.ffprobePath,
+            ["-v", "error", "-show_entries", "format=duration",
+             "-show_entries", "format_tags=title:format_tags=artist",
+             "-of", "default=noprint_wrappers=1", fileURL.path]
         )
+        var duration: Double?
+        var title: String?
+        var artist: String?
+        for line in probe.split(separator: "\n") {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            // ffprobe prints tags as "TAG:title=…" — strip the prefix.
+            let key = parts[0].hasPrefix("TAG:") ? String(parts[0].dropFirst(4)) : String(parts[0])
+            switch key {
+            case "duration": duration = Double(parts[1])
+            case "title": title = String(parts[1])
+            case "artist": artist = String(parts[1])
+            default: break
+            }
+        }
+        if let title, !title.isEmpty { book.title = title }
+        if let artist, !artist.isEmpty { book.author = artist }
+        book.audioDuration = duration
+
+        // Chapters: the MP4 family keeps its boxes near the container start
+        // (+faststart) or tail; MP3 ID3 frames live at the head. Slices —
+        // never the whole file into memory — mirror the iOS reader.
+        let ext = fileURL.pathExtension.lowercased()
+        let chapters: [AudioChapter]
+        if ext == "mp3" {
+            let data = Self.headSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
+            chapters = AudiobookChapters.chaptersFromID3(data)
+        } else {
+            let head = Self.headSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
+            let tail = Self.tailSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
+            chapters = AudiobookChapters.chaptersFromMP4(head + tail, totalSeconds: duration ?? 0)
+        }
+        if chapters.isEmpty {
+            let total = duration ?? 0
+            book.audioChapters = [AudioChapter(
+                title: fallbackTitle,
+                startSeconds: 0,
+                endSeconds: total
+            )]
+            book.audioChapterSource = "single"
+        } else {
+            book.audioChapters = chapters
+            book.audioChapterSource = "chpl"
+        }
+
+        // Cover: first embedded video frame → cover.jpg.
+        let coverURL = directory.appendingPathComponent("cover.jpg")
+        Self.runTool(
+            BookAudioPlayerBridge.ffmpegPath,
+            ["-v", "error", "-y", "-i", fileURL.path, "-map", "0:v:0",
+             "-frames:v", "1", "-q:v", "2", coverURL.path]
+        )
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: coverURL.path),
+           (attrs[.size] as? Int64 ?? 0) > 1_000 {
+            book.hasCover = true
+        }
+        return book
+    }
+
+    // MARK: - Audio tooling (shared with the player via the bridge names)
+
+    enum BookAudioPlayerBridge {
+        static let ffmpegPath: String = {
+            for candidate in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+                if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+            }
+            return "/usr/bin/ffmpeg"
+        }()
+        static let ffprobePath: String = {
+            for candidate in ["/usr/bin/ffprobe", "/usr/local/bin/ffprobe"] {
+                if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+            }
+            return "/usr/bin/ffprobe"
+        }()
+    }
+
+    /// Runs a CLI tool, returns stdout (empty on any failure — books import
+    /// degraded, never dead).
+    nonisolated static func runTool(_ path: String, _ args: [String]) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = args
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+        do {
+            try process.run()
+        } catch {
+            return ""
+        }
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// `bytes` from the head of the file (clamped).
+    nonisolated static func headSlice(_ url: URL, bytes: Int) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        return handle.readData(ofLength: bytes)
+    }
+
+    /// `bytes` from the tail of the file (clamped).
+    nonisolated static func tailSlice(_ url: URL, bytes: Int) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return nil }
+        let start = UInt64(max(0, Int64(size) - Int64(bytes)))
+        try? handle.seek(toOffset: start)
+        return handle.readData(ofLength: bytes)
     }
 
     // MARK: - Chapter text (epub spine → speakable text)

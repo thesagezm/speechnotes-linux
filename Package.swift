@@ -142,7 +142,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TTSEngineTests",
-            dependencies: ["TTSEngine", "AppPaths"],
+            dependencies: ["TTSEngine", "AppPaths", "Data"],
             linkerSettings: [
                 .unsafeFlags([
                     "-L" + homeLibDir,

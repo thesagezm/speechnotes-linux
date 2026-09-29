@@ -34,11 +34,13 @@ public final class AlsaSink {
 
     public var isOpen: Bool { handle != nil }
 
-    public init(sampleRate: Int) throws {
+    /// `device` selects the ALSA PCM ("default" unless overridden — tests
+    /// use the "null" device to exercise the full loop silently).
+    public init(sampleRate: Int, device: String = "default") throws {
         self.sampleRate = sampleRate
 
         var opened: OpaquePointer?
-        var code = snd_pcm_open(&opened, "default", SND_PCM_STREAM_PLAYBACK, 0)
+        var code = snd_pcm_open(&opened, device, SND_PCM_STREAM_PLAYBACK, 0)
         guard code >= 0, let h = opened else { throw AlsaError(code) }
         handle = h
 

@@ -72,6 +72,8 @@ public final class TTSController: ObservableObject {
         bookmarkKey: String
     ) {
         stop()
+        // One sound at a time: a starting TTS run stops any audiobook.
+        AudioBookController.shared.stop()
         let chunks = TTSChunker.planChunks(
             noteId: id,
             text: text,

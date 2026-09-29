@@ -17,6 +17,7 @@ struct BookReaderPane: View {
     @State private var chapterIndex: Int = 0
     @State private var showToc = false
     @State private var loadFailed = false
+    @State private var selectedAudioChapter = 0
 
     var body: some View {
         VStack(spacing: 8) {
@@ -81,9 +82,7 @@ struct BookReaderPane: View {
                     .foregroundColor(.orange)
             }
             if book.format == .audio {
-                Text("Audiobook playback arrives with the audio phase — the book is shelved and its chapters are listed.")
-                    .foregroundColor(.gray)
-                audioChapterList
+                audioControls
             } else {
                 ScrollView {
                     Text(chapterText ?? "")
@@ -95,14 +94,76 @@ struct BookReaderPane: View {
         .task { initialOpen() }
     }
 
-    private var audioChapterList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array((book.audioChapters ?? []).enumerated()), id: \.offset) { index, chapter in
-                    Text("\(index + 1). \(chapter.title.isEmpty ? "Chapter \(index + 1)" : chapter.title)")
+    /// Audiobook transport: chapter picker, play/pause/stop, the audible
+    /// clock, and resume-at-chapter. Driven by AudioBookController.
+    @ViewBuilder
+    private var audioControls: some View {
+        let audio = AudioBookController.shared
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                if audio.isPlaying(bookId: book.id) {
+                    if audio.state == .paused {
+                        Button("▶ Resume") { audio.resume() }
+                    } else {
+                        Button("❙❙ Pause") { audio.pause() }
+                    }
+                    Button("■ Stop") { audio.stop() }
+                } else {
+                    Button("▶ Play") {
+                        let start = resumeSeconds()
+                        audio.play(book: book, chapterIndex: selectedAudioChapter, startSeconds: start)
+                    }
+                    if resumeSeconds() > 0 {
+                        Button("↩ Resume chapter \(selectedAudioChapter + 1)") {
+                            audio.play(book: book, chapterIndex: selectedAudioChapter, startSeconds: resumeSeconds())
+                        }
+                    }
+                }
+                if let error = audio.lastError {
+                    Text(error).foregroundColor(.orange)
+                }
+                Spacer()
+                if let pos = audio.position, pos.bookId == book.id {
+                    Text("\(Self.clock(pos.seconds)) / \(Self.clock(chapterDuration))")
+                }
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array((book.audioChapters ?? []).enumerated()), id: \.offset) { index, chapter in
+                        // SwiftCrossUI on Linux has no Color.primary; the
+                        // ●/○ marker alone distinguishes the active chapter.
+                        Button(index == selectedAudioChapter
+                            ? "● \(index + 1). \(chapter.title)"
+                            : "○ \(index + 1). \(chapter.title)"
+                        ) {
+                            selectedAudioChapter = index
+                            if audio.isPlaying(bookId: book.id) {
+                                audio.play(book: book, chapterIndex: index, startSeconds: chapter.startSeconds)
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private var chapterDuration: Double {
+        let chapters = book.audioChapters ?? []
+        guard selectedAudioChapter < chapters.count else { return 0 }
+        return chapters[selectedAudioChapter].endSeconds - chapters[selectedAudioChapter].startSeconds
+    }
+
+    /// The per-chapter second bookmark (stored as ms in textOffset).
+    private func resumeSeconds() -> Double {
+        let mark = BookmarkStore.shared.get(
+            BookmarkStore.bookKey(book.id.uuidString, chapter: selectedAudioChapter)
+        )
+        return Double(mark?.textOffset ?? 0) / 1000.0
+    }
+
+    private static func clock(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 
     private var chapterCount: Int {
@@ -119,31 +180,47 @@ struct BookReaderPane: View {
 
     private func initialOpen() {
         if let position = book.position, position.chapterIndex < chapterCount {
-            open(chapter: position.chapterIndex)
+            chapterIndex = position.chapterIndex
+            selectedAudioChapter = position.chapterIndex
+            if book.format == .epub {
+                loadChapter(position.chapterIndex)
+            }
+            books.markOpened(book)
         } else {
-            open(chapter: 0)
+            chapterIndex = 0
+            selectedAudioChapter = 0
+            if book.format == .epub {
+                loadChapter(0)
+            }
+            books.markOpened(book)
         }
     }
 
     private func open(chapter: Int, resume: Bool = false) {
         let clamped = min(max(chapter, 0), chapterCount - 1)
         chapterIndex = clamped
+        selectedAudioChapter = clamped
         loadFailed = false
-        guard book.format == .epub, let spine = book.spine, clamped < spine.count else {
+        guard book.format == .epub else { return }
+        loadChapter(clamped)
+        books.markOpened(book)
+        if !resume {
+            savePosition(fraction: 0)
+        }
+    }
+
+    private func loadChapter(_ index: Int) {
+        guard let spine = book.spine, index < spine.count else {
             chapterText = nil
             return
         }
         do {
             let data = try Data(contentsOf: BooksStore.epubArchiveURL(book), options: .mappedIfSafe)
-            chapterText = BooksStore.chapterText(book: book, chapterIndex: clamped, archiveData: data)
+            chapterText = BooksStore.chapterText(book: book, chapterIndex: index, archiveData: data)
             if chapterText == nil { loadFailed = true }
         } catch {
             chapterText = nil
             loadFailed = true
-        }
-        books.markOpened(book)
-        if !resume {
-            savePosition(fraction: 0)
         }
     }
 
