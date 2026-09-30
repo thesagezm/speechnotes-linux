@@ -32,6 +32,13 @@ struct SettingsPane: View {
                         )
                         .pickerStyle(.menu)
                     }
+                    row("Voice") {
+                        Picker(
+                            of: voiceOptions.map(\.displayName),
+                            selection: voiceSelection
+                        )
+                        .pickerStyle(.menu)
+                    }
                     sliderRow(
                         title: "Speech rate",
                         value: rateBinding,
@@ -128,13 +135,13 @@ struct SettingsPane: View {
                     if let status = jexStatus {
                         Text(status)
                             .font(.footnote)
-                            .foregroundColor(.gray)
+                            .foregroundColor(theme.text)
                     }
                 }
 
                 Text(libraryStats)
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
                     .padding(.top, 12)
             }
             .padding(16)
@@ -180,7 +187,7 @@ struct SettingsPane: View {
                 Text(title)
                 Spacer()
                 Text(display)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
                     .font(.callout)
             }
             Slider(value: value, in: range)
@@ -200,12 +207,12 @@ struct SettingsPane: View {
                     Text(title)
                     Text(subtitle)
                         .font(.footnote)
-                        .foregroundColor(.gray)
+                        .foregroundColor(theme.text)
                 }
                 Spacer()
                 if installed {
                     Text("Installed ✓")
-                        .foregroundColor(.gray)
+                        .foregroundColor(theme.text)
                 } else {
                     Button("Download") {
                         modelStatus[key] = "downloading…"
@@ -217,22 +224,12 @@ struct SettingsPane: View {
             if let status = modelStatus[key] {
                 Text(status)
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
             }
         }
     }
 
-    private var themeColor: CardColors { CardColors(scheme: theme.effectiveScheme) }
-
-    private struct CardColors {
-        let scheme: ColorScheme
-        var card: Color {
-            switch scheme {
-            case .light: return Color(white: 0.0, opacity: 0.035)
-            case .dark: return Color(white: 1.0, opacity: 0.045)
-            }
-        }
-    }
+    private var themeColor: SurfaceStyle { theme.surface }
 
     // MARK: - Bindings
 
@@ -249,6 +246,31 @@ struct SettingsPane: View {
 
     private var allEngineKinds: [EngineKind] {
         [.espeak, .piper, .pico, .kokoro, .supertonic]
+    }
+
+    private var currentKind: EngineKind {
+        EngineKind(rawValue: prefs.engineKind) ?? .espeak
+    }
+
+    private var voiceOptions: [VoiceCatalog.Voice] {
+        VoiceCatalog.voices(for: currentKind)
+    }
+
+    private var voiceSelection: Binding<String?> {
+        Binding(
+            get: {
+                let id = prefs.voiceForEngine(currentKind)
+                if id.isEmpty { return "(default)" }
+                return voiceOptions.first(where: { $0.id == id })?.displayName ?? "(default)"
+            },
+            set: { name in
+                if name == "(default)" || name == nil {
+                    prefs.setVoice("", for: currentKind)
+                } else if let id = voiceOptions.first(where: { $0.displayName == name })?.id {
+                    prefs.setVoice(id, for: currentKind)
+                }
+            }
+        )
     }
 
     private var themeSelection: Binding<String?> {
@@ -323,6 +345,7 @@ struct SettingsPane: View {
     private func download(_ key: String, _ label: String, _ body: @escaping () async throws -> Void) async {
         do {
             try await body()
+            VoiceCatalog.invalidateCache()
             modelStatus[key] = "installed ✓"
         } catch {
             modelStatus[key] = "\(label) download failed: \(error)"

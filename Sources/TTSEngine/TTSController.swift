@@ -165,6 +165,10 @@ public final class TTSController: ObservableObject {
         let player = TTSPlayer()
         defer { player.close() }
 
+        // The chunk WAVs live in cache/tts/<noteId>/ — create it or every
+        // engine's write fails with "folder doesn't exist".
+        TTSChunker.ensureRunDir(noteId: noteId)
+
         for chunk in chunks {
             if flags.isStopped { break }
             let outFile = TTSChunker.cacheFile(noteId: noteId, index: chunk.index)

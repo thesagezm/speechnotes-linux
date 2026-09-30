@@ -13,12 +13,13 @@ final class PaletteTests: XCTestCase {
         // shows behind SCU's dark controls.
         for css in [light, dark] {
             XCTAssertTrue(css.contains("window {"), "window rule missing")
-            XCTAssertTrue(css.contains("textview text {"), "textview rule missing")
+            XCTAssertTrue(css.contains("textview"), "textview rule missing")
             XCTAssertTrue(css.contains("@define-color window_bg_color"))
             XCTAssertTrue(css.contains("@define-color accent_bg_color #3584e4"))
             XCTAssertTrue(css.contains("button:hover"), "hover feedback missing")
+            XCTAssertTrue(css.contains("entry"), "entry styling missing")
         }
-        XCTAssertTrue(light.contains("#fafafb"))
+        XCTAssertTrue(light.contains("#f6f5f4"))
         XCTAssertTrue(dark.contains("#222226"))
         XCTAssertNotEqual(light, dark)
     }

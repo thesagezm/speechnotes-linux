@@ -79,12 +79,12 @@ struct MiniPlayerBar: View {
                     .font(.system(size: 13, weight: .medium))
                 Text(playback.kindLabel)
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
             }
             Spacer()
             Text(playback.progressLabel)
                 .font(.footnote)
-                .foregroundColor(.gray)
+                .foregroundColor(theme.text)
             if playback.isPaused {
                 Button("▶ Resume") { control(.resume) }
                     .buttonStyle(.bordered)

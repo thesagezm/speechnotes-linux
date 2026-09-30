@@ -36,7 +36,7 @@ struct BookReaderPane: View {
                     .buttonStyle(.bordered)
                 Text(chapterLabel)
                     .font(.callout)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
                 Button("Chapter ▸") { open(chapter: min(chapterCount - 1, chapterIndex + 1)) }
                     .buttonStyle(.bordered)
                 Spacer()
@@ -95,7 +95,7 @@ struct BookReaderPane: View {
                 Spacer()
                 if let pos = tts.position, pos.noteId == book.id {
                     Text("\(Int((pos.fraction * 100).rounded()))%")
-                        .foregroundColor(.gray)
+                        .foregroundColor(theme.text)
                 }
                 Button("🗑") {
                     tts.stop()
@@ -172,7 +172,7 @@ struct BookReaderPane: View {
                 Spacer()
                 if let pos = audio.position, pos.bookId == book.id {
                     Text("\(Self.clock(pos.seconds)) / \(Self.clock(chapterDuration))")
-                        .foregroundColor(.gray)
+                        .foregroundColor(theme.text)
                 }
             }
             ScrollView {
@@ -312,7 +312,7 @@ struct BookReaderPane: View {
             text: text,
             engineKind: EngineKind(rawValue: prefs.engineKind) ?? .espeak,
             speed: Float(prefs.rateMultiplier),
-            voice: prefs.voice,
+            voice: prefs.voiceForEngine(EngineKind(rawValue: prefs.engineKind) ?? .espeak),
             bookmarkKey: BookmarkStore.bookKey(book.id.uuidString, chapter: chapterIndex)
         )
     }

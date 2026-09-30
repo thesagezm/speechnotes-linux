@@ -1,6 +1,7 @@
 import Foundation
 import SwiftCrossUI
 import Data
+import Appearance
 
 /// The notes list: scope + search + sort + pin/star, feeding the editor
 /// column. Ported from speechnotes-ios NotesListView; swipe actions and the
@@ -12,6 +13,8 @@ struct NotesListPane: View {
     let prefs: Prefs
     @Binding var selectedNoteId: UUID?
     @Binding var searchText: String
+
+    @State private var theme = ThemeController.shared
 
     private enum SortOrder: String {
         case edited
@@ -58,7 +61,7 @@ struct NotesListPane: View {
                     .font(.system(size: 14, weight: note.isPinned ? .medium : .regular))
                 Text(caption(for: note))
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
             }
             Spacer()
             Button(note.isPinned ? "📌" : "○") {

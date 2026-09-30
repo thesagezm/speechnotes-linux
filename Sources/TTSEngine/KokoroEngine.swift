@@ -59,12 +59,14 @@ public final class KokoroEngine: TTSEngineBase, @unchecked Sendable {
             throw TTSError.synthesisFailed("Kokoro model files missing at \(dir.path)")
         }
 
-        // Prefer fp32; fall back to the uint8 tier on small disks.
+        // Prefer the uint8 tier when both exist — half the resident memory
+        // (177 MB vs 326 MB) for near-identical weight-only-quantized
+        // quality, which matters on memory-constrained machines.
         let fm = FileManager.default
-        var modelFile = "model.onnx"
+        var modelFile = "model_uint8.onnx"
         if !fm.fileExists(atPath: dir.appendingPathComponent(modelFile).path),
-           fm.fileExists(atPath: dir.appendingPathComponent("model_uint8.onnx").path) {
-            modelFile = "model_uint8.onnx"
+           fm.fileExists(atPath: dir.appendingPathComponent("model.onnx").path) {
+            modelFile = "model.onnx"
         }
 
         session = try OrtSessionRef(modelPath: dir.appendingPathComponent(modelFile).path)
@@ -81,14 +83,10 @@ public final class KokoroEngine: TTSEngineBase, @unchecked Sendable {
             throw TTSError.synthesisFailed("tokenizer.json has no vocab")
         }
 
-        // voices.npz: a zip of .npy arrays, one per voice.
-        guard let voicesPath = KokoroModelManager.voiceBankPath() else {
-            throw TTSError.synthesisFailed("voices.npz missing")
+        voices = try KokoroModelManager.loadVoiceBanks()
+        guard !voices.isEmpty else {
+            throw TTSError.synthesisFailed("no voice banks under \(KokoroModelManager.voicesDirectory.path)")
         }
-        guard let npz = NpyzReader.read(fileFromPath: voicesPath), !npz.isEmpty else {
-            throw TTSError.synthesisFailed("voices.npz unreadable")
-        }
-        voices = npz
         Log.info("KokoroEngine ready: \(modelFile), \(vocab.count) vocab entries, \(voices.count) voices")
     }
 
@@ -208,6 +206,12 @@ public enum KokoroModelManager {
         AppPaths.modelsDir.appendingPathComponent("kokoro", isDirectory: true)
     }
 
+    /// One raw float32 file per voice — the onnx-community repo's format
+    /// (each `[rows, 256]` style bank, 510 rows × 256 × 4 bytes ≈ 522 KB).
+    public static var voicesDirectory: URL {
+        modelDirectory.appendingPathComponent("voices", isDirectory: true)
+    }
+
     public static func modelFileURL() -> URL {
         modelDirectory.appendingPathComponent("model.onnx")
     }
@@ -216,35 +220,92 @@ public enum KokoroModelManager {
         modelDirectory.appendingPathComponent("tokenizer.json")
     }
 
-    public static func voiceBankPath() -> String? {
-        let url = modelDirectory.appendingPathComponent("voices.npz")
-        return FileManager.default.fileExists(atPath: url.path) ? url.path : nil
+    /// Voices with a .bin bank on disk (bare ids, "af_heart").
+    public static func installedVoices() -> [String] {
+        let dir = voicesDirectory
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
+            return []
+        }
+        return names
+            .filter { $0.hasSuffix(".bin") }
+            .map { String($0.dropLast(4)) }
+            .sorted()
     }
 
-    /// True when a model tier + tokenizer + voice bank are all present.
+    /// Loads every voice bank: the .bin files, plus a legacy voices.npz if
+    /// one is present (keyed "af_heart.npy" — the iOS app's format). Keys
+    /// are bare voice ids.
+    public static func loadVoiceBanks() throws -> [String: [Float]] {
+        var banks: [String: [Float]] = [:]
+        let fm = FileManager.default
+        if let npzPath = (try? fm.contentsOfDirectory(atPath: modelDirectory.path))?
+            .first(where: { $0 == "voices.npz" }),
+           let npz = NpyzReader.read(
+            fileFromPath: modelDirectory.appendingPathComponent(npzPath).path
+           ) {
+            for (name, floats) in npz {
+                let id = name.hasSuffix(".npy") ? String(name.dropLast(4)) : name
+                banks[id] = floats
+            }
+        }
+        for voice in installedVoices() {
+            let url = voicesDirectory.appendingPathComponent("\(voice).bin")
+            guard let data = fm.contents(atPath: url.path),
+                  data.count % MemoryLayout<Float>.stride == 0, data.count > 0 else { continue }
+            banks[voice] = data.withUnsafeBytes {
+                Array($0.bindMemory(to: Float.self))
+            }
+        }
+        return banks
+    }
+
+    /// True when a model tier + tokenizer + at least one voice bank exist.
     public static func modelFilesAreValid() -> Bool {
         let fm = FileManager.default
         let dir = modelDirectory
         func size(_ name: String) -> Int64 {
             (try? fm.attributesOfItem(atPath: dir.appendingPathComponent(name).path))?[.size] as? Int64 ?? 0
         }
+        // The uint8 tier on disk is ~82 MB — the threshold must sit below
+        // that or an installed model reads as missing.
         let hasModel = size("model.onnx") > 200_000_000
-            || size("model_uint8.onnx") > 100_000_000
+            || size("model_uint8.onnx") > 60_000_000
         return hasModel && size("tokenizer.json") > 1_000
-            && (size("voices.npz") > 10_000_000)
+            && !installedVoices().isEmpty
     }
 
-    /// Downloads the ONNX tier + tokenizer + voice bank (~340 MB for fp32,
-    /// ~190 MB for uint8). The tier comes from KOKORO_TIER (unset = fp32).
+    /// Kokoro v1.0's 54 voice ids — the fallback when the repo listing is
+    /// unreachable (offline download retry, rate limit).
+    static let knownVoices = [
+        "af_heart", "af_alloy", "af_aoede", "af_bella", "af_jessica", "af_kore",
+        "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+        "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael",
+        "am_onyx", "am_puck", "am_santa",
+        "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+        "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+        "ef_dora", "em_alex", "em_santa",
+        "ff_siwis",
+        "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+        "if_sara", "im_nicola",
+        "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro",
+        "pf_dora", "pm_alex", "pm_santa",
+        "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+        "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
+    ]
+
+    /// Downloads the model tier + tokenizer + every voice bank (~200 MB for
+    /// uint8 + voices). The tier comes from KOKORO_TIER (unset = uint8 —
+    /// half the resident memory of fp32). Voice ids come from the repo's
+    /// tree listing when reachable, else `knownVoices`.
     public static func download() async throws {
         try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
-        let tier = ProcessInfo.processInfo.environment["KOKORO_TIER"] == "uint8"
-            ? "model_uint8.onnx"
-            : "model.onnx"
+        try FileManager.default.createDirectory(at: voicesDirectory, withIntermediateDirectories: true)
+        let tier = ProcessInfo.processInfo.environment["KOKORO_TIER"] == "fp32"
+            ? "model.onnx"
+            : "model_uint8.onnx"
         let files: [(path: String, name: String)] = [
             ("onnx/\(tier)", tier),
             ("tokenizer.json", "tokenizer.json"),
-            ("voices.npz", "voices.npz"),
         ]
         for file in files {
             guard let url = URL(string: "\(baseURL)/\(file.path)") else {
@@ -253,6 +314,37 @@ public enum KokoroModelManager {
             let (data, _) = try await URLSession.shared.data(from: url)
             try data.write(to: modelDirectory.appendingPathComponent(file.name), options: .atomic)
             Log.info("KokoroModelManager: wrote \(file.name) (\(data.count) bytes)")
+        }
+
+        for voice in await availableVoiceIds() {
+            guard let url = URL(string: "\(baseURL)/voices/\(voice).bin") else { continue }
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard data.count > 100_000 else {
+                // "Entry not found"-style garbage — skip, never save.
+                Log.error("KokoroModelManager: \(voice).bin response too small (\(data.count) bytes)")
+                continue
+            }
+            try data.write(to: voicesDirectory.appendingPathComponent("\(voice).bin"), options: .atomic)
+        }
+        Log.info("KokoroModelManager: \(installedVoices().count) voice bank(s) installed")
+    }
+
+    /// The repo's voice list (the authoritative set), falling back to the
+    /// hardcoded v1.0 ids when the tree API is unreachable.
+    static func availableVoiceIds() async -> [String] {
+        guard let url = URL(string: "https://huggingface.co/api/models/onnx-community/Kokoro-82M-v1.0-ONNX/tree/main/voices") else {
+            return knownVoices
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let root = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
+            let ids = root.compactMap { entry -> String? in
+                guard let path = entry["path"] as? String, path.hasSuffix(".bin") else { return nil }
+                return String(path.dropLast(4)).split(separator: "/").last.map(String.init)
+            }
+            return ids.isEmpty ? knownVoices : ids
+        } catch {
+            return knownVoices
         }
     }
 }

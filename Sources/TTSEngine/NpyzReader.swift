@@ -12,6 +12,31 @@ public enum NpyzReader {
         case badNpy(String)
     }
 
+    /// Just the member names (e.g. ["af_heart.npy", …]) — walks the central
+    /// directory without inflating any arrays. The voice picker lists 54
+    /// Kokoro voices this way instead of loading ~15 MB of style vectors.
+    public static func names(fileFromPath path: String) -> [String] {
+        guard let data = FileManager.default.contents(atPath: path),
+              let eocd = data.range(of: Data("PK\u{5}\u{6}".utf8)) else { return [] }
+        let centralDirectoryOffset = Int(readLittleEndian(data, at: eocd.lowerBound + 16, count: 4))
+        var cursor = centralDirectoryOffset
+        var result: [String] = []
+        while cursor + 46 <= data.count,
+              data[cursor..<(cursor + 4)] == Data("PK\u{1}\u{2}".utf8) {
+            let nameLength = Int(readLittleEndian(data, at: cursor + 28, count: 2))
+            let extraLength = Int(readLittleEndian(data, at: cursor + 30, count: 2))
+            let commentLength = Int(readLittleEndian(data, at: cursor + 32, count: 2))
+            if nameLength > 0,
+               let name = String(data: data[(cursor + 46)..<(cursor + 46 + nameLength)], encoding: .utf8),
+               name.hasSuffix(".npy"),
+               let member = name.split(separator: "/").last {
+                result.append(String(member))
+            }
+            cursor += 46 + nameLength + extraLength + commentLength
+        }
+        return result
+    }
+
     /// Parses every `.npy` member into a flat float32 array, keyed by the
     /// member name (e.g. "af_heart.npy"). Unreadable members are skipped.
     public static func read(fileFromPath path: String) -> [String: [Float]]? {

@@ -34,11 +34,11 @@ public final class BooksStore: ObservableObject {
 
     // MARK: - Locations
 
-    public static var booksDirectory: URL {
+    nonisolated public static var booksDirectory: URL {
         AppPaths.booksDir
     }
 
-    public static func bookDirectory(_ id: UUID) -> URL {
+    nonisolated public static func bookDirectory(_ id: UUID) -> URL {
         booksDirectory.appendingPathComponent(id.uuidString, isDirectory: true)
     }
 
@@ -69,7 +69,7 @@ public final class BooksStore: ObservableObject {
             .appendingPathComponent(String(format: "%04d.txt", chapterIndex))
     }
 
-    public static func manifestURL(_ id: UUID) -> URL {
+    nonisolated public static func manifestURL(_ id: UUID) -> URL {
         bookDirectory(id).appendingPathComponent("manifest.json")
     }
 
@@ -119,71 +119,101 @@ public final class BooksStore: ObservableObject {
 
     // MARK: - Import
 
+    private enum ImportOutcome {
+        case imported(Book)
+        case failed(String)
+    }
+
     /// Imports one book from a URL (the GTK file picker hands these over).
-    /// The copy is synchronous and fast; the metadata parse runs detached so
-    /// a slow/corrupt file can never block the UI. Metadata failure
-    /// downgrades to a filename-titled book — a book that parses badly is
-    /// still a book. Returns the imported book, or nil when the copy/manifest
-    /// write failed (importError is set).
+    /// Everything — the copy and the metadata parse — runs detached so a
+    /// multi-GB audiobook can never freeze the UI (the 2.9 GB Harry Potter
+    /// import used to block the main thread for its whole copy). Metadata
+    /// failure downgrades to a filename-titled book — a book that parses
+    /// badly is still a book. Returns the imported book, or nil when the
+    /// copy/manifest write failed (importError is set).
     @discardableResult
     public func importBook(from sourceURL: URL) async -> Book? {
         isImporting = true
         defer { isImporting = false }
 
         let ext = sourceURL.pathExtension.lowercased()
-        let format: BookFormat?
-        switch ext {
-        case "epub": format = .epub
-        case "pdf": format = .pdf
-        case "m4b", "m4a", "mp4", "mp3": format = .audio
-        default: format = nil
-        }
-        guard let format else {
+        guard let format = Self.format(forExtension: ext) else {
             importError = "Unsupported book format: .\(ext)"
             return nil
         }
 
         let id = UUID()
         let dir = Self.bookDirectory(id)
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            // Audio books keep their TRUE extension — players/decoders map a
-            // URL to its container parser largely by extension.
-            let destinationExtension = format == .audio ? ext : format.rawValue
-            let destination = dir.appendingPathComponent("original.\(destinationExtension)")
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
-        } catch {
-            importError = "Could not copy \"\(sourceURL.lastPathComponent)\": \(error.localizedDescription)"
-            try? FileManager.default.removeItem(at: dir)
-            return nil
-        }
-
         let fileName = sourceURL.lastPathComponent
-        let parsed: Book = switch format {
-        case .epub:
-            await Task.detached(priority: .userInitiated) {
-                Self.buildEpubManifest(id: id, originalFileName: fileName, directory: dir)
-            }.value
-        case .pdf:
-            await Task.detached(priority: .userInitiated) {
-                Self.buildPdfManifest(id: id, originalFileName: fileName, directory: dir)
-            }.value
-        case .audio:
-            await Task.detached(priority: .userInitiated) {
-                Self.buildAudioManifest(id: id, originalFileName: fileName, directory: dir)
-            }.value
-        }
 
-        do {
-            let data = try JSONEncoder().encode(parsed)
-            try data.write(to: Self.manifestURL(id), options: .atomic)
-        } catch {
-            importError = "Could not save book metadata: \(error.localizedDescription)"
-            try? FileManager.default.removeItem(at: dir)
+        let outcome: ImportOutcome = await Task.detached(priority: .userInitiated) {
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                // Audio books keep their TRUE extension — players/decoders
+                // map a URL to its container parser largely by extension.
+                let destinationExtension = format == .audio ? ext : format.rawValue
+                let destination = dir.appendingPathComponent("original.\(destinationExtension)")
+                try Self.materializeSource(at: sourceURL, to: destination)
+                let parsed = Self.buildManifest(
+                    format: format,
+                    id: id,
+                    originalFileName: fileName,
+                    directory: dir
+                )
+                let data = try JSONEncoder().encode(parsed)
+                try data.write(to: Self.manifestURL(id), options: .atomic)
+                return .imported(parsed)
+            } catch {
+                try? FileManager.default.removeItem(at: dir)
+                return .failed("\(fileName): \(error.localizedDescription)")
+            }
+        }.value
+
+        switch outcome {
+        case .imported(let book):
+            refresh()
+            return book
+        case .failed(let message):
+            importError = "Could not import \(message)"
             return nil
         }
-        refresh()
-        return parsed
+    }
+
+    /// Hardlinks the source when it's on the same filesystem — a 3 GB
+    /// audiobook then imports instantly and costs no extra space. Anything
+    /// else (portal FUSE paths, other partitions) falls back to a real copy.
+    nonisolated static func materializeSource(at sourceURL: URL, to destination: URL) throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        do {
+            try fm.linkItem(at: sourceURL, to: destination)
+        } catch {
+            try fm.copyItem(at: sourceURL, to: destination)
+        }
+    }
+
+    nonisolated static func format(forExtension ext: String) -> BookFormat? {
+        switch ext {
+        case "epub": return .epub
+        case "pdf": return .pdf
+        case "m4b", "m4a", "mp4", "mp3": return .audio
+        default: return nil
+        }
+    }
+
+    nonisolated static func buildManifest(
+        format: BookFormat,
+        id: UUID,
+        originalFileName: String,
+        directory: URL
+    ) -> Book {
+        switch format {
+        case .epub: return buildEpubManifest(id: id, originalFileName: originalFileName, directory: directory)
+        case .pdf: return buildPdfManifest(id: id, originalFileName: originalFileName, directory: directory)
+        case .audio: return buildAudioManifest(id: id, originalFileName: originalFileName, directory: directory)
+        }
     }
 
     /// Runs detached. Reads only a few zip entries — never the whole book
@@ -322,18 +352,27 @@ public final class BooksStore: ObservableObject {
         if let artist, !artist.isEmpty { book.author = artist }
         book.audioDuration = duration
 
-        // Chapters: the MP4 family keeps its boxes near the container start
-        // (+faststart) or tail; MP3 ID3 frames live at the head. Slices —
-        // never the whole file into memory — mirror the iOS reader.
-        let ext = fileURL.pathExtension.lowercased()
-        let chapters: [AudioChapter]
-        if ext == "mp3" {
-            let data = Self.headSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
-            chapters = AudiobookChapters.chaptersFromID3(data)
-        } else {
-            let head = Self.headSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
-            let tail = Self.tailSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
-            chapters = AudiobookChapters.chaptersFromMP4(head + tail, totalSeconds: duration ?? 0)
+        // Chapters: ffprobe reads the container's own chapter atoms (chpl
+        // for the MP4 family, ID3 CHAP for MP3) — the same decoder of record
+        // the player uses, so what ffprobe sees, the reader gets. The
+        // manual byte-level parsers remain the fallback.
+        var chapters = Self.chaptersFromFFprobe(fileURL.path)
+        if chapters.isEmpty {
+            let ext = fileURL.pathExtension.lowercased()
+            if ext == "mp3" {
+                let data = Self.headSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
+                chapters = AudiobookChapters.chaptersFromID3(data)
+            } else {
+                let head = Self.headSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
+                let tail = Self.tailSlice(fileURL, bytes: 8 * 1024 * 1024) ?? Data()
+                // Parse the windows SEPARATELY — in a head+tail
+                // concatenation, a truncated mdat box makes the box walk
+                // skip past the tail's moov (the missing-TOC bug).
+                chapters = AudiobookChapters.chaptersFromMP4(head, totalSeconds: duration ?? 0)
+                if chapters.isEmpty {
+                    chapters = AudiobookChapters.chaptersFromMP4(tail, totalSeconds: duration ?? 0)
+                }
+            }
         }
         if chapters.isEmpty {
             let total = duration ?? 0
@@ -363,6 +402,47 @@ public final class BooksStore: ObservableObject {
     }
 
     // MARK: - Audio tooling (shared with the player via the bridge names)
+
+    /// Chapter list straight from the container, via ffprobe's JSON output.
+    /// Titles come from the tags; entries without a usable time range are
+    /// dropped. Empty when the file has no chapters (or ffprobe is absent).
+    nonisolated static func chaptersFromFFprobe(_ path: String) -> [AudioChapter] {
+        guard FileManager.default.isExecutableFile(atPath: BookAudioPlayerBridge.ffprobePath) else {
+            return []
+        }
+        let json = runTool(
+            BookAudioPlayerBridge.ffprobePath,
+            ["-v", "error", "-show_chapters", "-of", "json", path]
+        )
+        guard !json.isEmpty,
+              let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let entries = root["chapters"] as? [[String: Any]] else {
+            return []
+        }
+        var chapters: [AudioChapter] = []
+        for entry in entries {
+            guard let start = Self.probeSeconds(entry["start_time"]),
+                  let end = Self.probeSeconds(entry["end_time"]),
+                  end > start else { continue }
+            let tags = entry["tags"] as? [String: Any]
+            chapters.append(AudioChapter(
+                title: (tags?["title"] as? String) ?? "",
+                startSeconds: start,
+                endSeconds: end
+            ))
+        }
+        return chapters
+    }
+
+    /// ffprobe prints times as strings ("63.531000"); JSON may also give
+    /// numbers. Accepts both.
+    nonisolated static func probeSeconds(_ value: Any?) -> Double? {
+        if let d = value as? Double { return d }
+        if let i = value as? Int { return Double(i) }
+        if let s = value as? String { return Double(s) }
+        return nil
+    }
 
     enum BookAudioPlayerBridge {
         static let ffmpegPath: String = {

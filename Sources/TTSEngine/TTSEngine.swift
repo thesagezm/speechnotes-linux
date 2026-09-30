@@ -2,6 +2,7 @@ import Foundation
 import SpeechLogic
 import AppPaths
 import Log
+import EspeakBridge
 
 /// Engine tier selector — raw values match `Prefs.engineKind` exactly (the
 /// iOS app's UserDefaults vocabulary).
@@ -136,14 +137,20 @@ public class TTSEngineBase: @unchecked Sendable {
 /// Builds engines for the tier. Later phases register pico/piper/kokoro/
 /// supertonic here; asking for a missing engine is a soft error the UI
 /// surfaces as a log line (never a crash — TTS must never be worse than
-/// silence).
+/// silence). `voice` selects the per-engine voice (VoiceCatalog vocabulary);
+/// an empty or unknown voice falls back to the engine's curated default.
 public enum EngineFactory {
-    public static func make(kind: EngineKind) throws -> TTSEngineBase {
+    public static func make(kind: EngineKind, voice: String = "") throws -> TTSEngineBase {
         switch kind {
-        case .espeak: return EspeakEngine()
+        case .espeak:
+            let engine = EspeakEngine()
+            engine.voice = voice
+            return engine
         case .piper:
             let engine = PiperEngine()
-            if let voice = PiperModelManager.installedVoices().first {
+            let wanted = PiperModelManager.installedVoices().first { $0 == voice }
+                ?? PiperModelManager.installedVoices().first
+            if let voice = wanted {
                 _ = engine.createModel(
                     modelPath: PiperModelManager.modelDirectory(for: voice).path,
                     modelId: voice
@@ -155,16 +162,21 @@ public enum EngineFactory {
             if KokoroModelManager.modelFilesAreValid() {
                 _ = engine.createModel(
                     modelPath: KokoroModelManager.modelDirectory.path,
-                    modelId: KokoroModelManager.curatedVoice
+                    modelId: voice
                 )
+                if !voice.isEmpty {
+                    engine.voice = voice
+                }
             }
             return engine
         case .supertonic:
             let engine = SupertonicEngine()
             if SupertonicModelManager.modelFilesAreValid() {
+                let wanted = SupertonicModelManager.installedVoices().first { $0 == voice }
+                    ?? SupertonicModelManager.curatedVoice
                 _ = engine.createModel(
                     modelPath: SupertonicModelManager.onnxDirectory.path,
-                    modelId: SupertonicModelManager.curatedVoice
+                    modelId: wanted
                 )
             }
             return engine
@@ -173,6 +185,87 @@ public enum EngineFactory {
             // when the box lacks it.
             return PicoEngine()
         }
+    }
+}
+
+/// What each engine can speak with — the voice picker's data source. Lists
+/// only voices that exist on disk (or in the library), so a selection is
+/// always playable.
+public enum VoiceCatalog {
+    public struct Voice: Sendable, Equatable {
+        public let id: String
+        public let displayName: String
+    }
+
+    /// Listing espeak's 131 voices (or inflating Kokoro's voice bank) is not
+    /// free — cache per engine kind. Invalidate after a model download adds
+    /// voices.
+    nonisolated(unsafe) private static var cache: [String: [Voice]] = [:]
+
+    public static func invalidateCache() {
+        cache.removeAll()
+    }
+
+    public static func voices(for kind: EngineKind) -> [Voice] {
+        if let cached = cache[kind.rawValue] { return cached }
+        let list = Self.computeVoices(for: kind)
+        cache[kind.rawValue] = list
+        return list
+    }
+
+    private static func computeVoices(for kind: EngineKind) -> [Voice] {
+        switch kind {
+        case .espeak:
+            let bridge = EspeakBridge()
+            guard (try? bridge.initialize()) != nil else { return [] }
+            return bridge.listVoices().map { voice in
+                Voice(
+                    id: voice.identifier.isEmpty ? voice.name : voice.identifier,
+                    displayName: voice.name.isEmpty ? voice.identifier : voice.name
+                )
+            }
+        case .pico:
+            return []
+        case .piper:
+            return PiperModelManager.installedVoices().map { name in
+                Voice(id: name, displayName: name)
+            }
+        case .kokoro:
+            return KokoroModelManager.installedVoices().map { id in
+                Voice(id: id, displayName: Self.kokoroLabel(id))
+            }
+        case .supertonic:
+            return SupertonicModelManager.installedVoices().map { name in
+                Voice(
+                    id: name,
+                    displayName: name.hasPrefix("F")
+                        ? "\(name) · female"
+                        : name.hasPrefix("M") ? "\(name) · male" : name
+                )
+            }
+        }
+    }
+
+    /// "af_heart" → "af_heart (American female)"; the two-letter prefix
+    /// encodes language+gender per Kokoro's voice naming.
+    static func kokoroLabel(_ id: String) -> String {
+        guard id.count >= 2 else { return id }
+        let lang = String(id.prefix(1))
+        let gender = id[id.index(id.startIndex, offsetBy: 1)] == "f" ? "female" : "male"
+        let language: String
+        switch lang {
+        case "a": language = "American"
+        case "b": language = "British"
+        case "e": language = "Spanish"
+        case "f": language = "French"
+        case "h": language = "Hindi"
+        case "i": language = "Italian"
+        case "j": language = "Japanese"
+        case "p": language = "Portuguese"
+        case "z": language = "Mandarin"
+        default: language = lang
+        }
+        return "\(id) · \(language) \(gender)"
     }
 }
 
@@ -218,6 +311,16 @@ public enum TTSChunker {
             .appendingPathComponent("tts", isDirectory: true)
             .appendingPathComponent(noteId.uuidString, isDirectory: true)
             .appendingPathComponent(String(format: "%04d.wav", index))
+    }
+
+    /// Creates the run directory `cacheFile` writes into. Nothing else in
+    /// the app owns it — `WAVFile.write` fails with "folder doesn't exist"
+    /// when this was never called, which used to silence every engine.
+    public static func ensureRunDir(noteId: UUID) {
+        let dir = AppPaths.cacheDir
+            .appendingPathComponent("tts", isDirectory: true)
+            .appendingPathComponent(noteId.uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
     /// Drops a note's cached chunk WAVs (called when its text changes or the

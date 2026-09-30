@@ -18,7 +18,8 @@ let package = Package(
         .executable(name: "gtk-smoke", targets: ["GTKSmoke"]),
         .executable(name: "theme-smoke", targets: ["ThemeSmoke"]),
         .executable(name: "alsa-tone", targets: ["AlsaTone"]),
-        .executable(name: "espeak-say", targets: ["EspeakSay"])
+        .executable(name: "espeak-say", targets: ["EspeakSay"]),
+        .executable(name: "tts-smoke", targets: ["TtsSmoke"])
     ],
     dependencies: [
         .package(url: "https://github.com/stackotter/swift-cross-ui.git", from: "0.9.0")
@@ -110,6 +111,12 @@ let package = Package(
         .executableTarget(
             name: "EspeakSay",
             dependencies: ["EspeakBridge", "AlsaSink"],
+            linkerSettings: [.unsafeFlags(["-L" + homeLibDir])]
+        ),
+        // TTS tier diagnostic: one sentence through every engine, headless.
+        .executableTarget(
+            name: "TtsSmoke",
+            dependencies: ["TTSEngine"],
             linkerSettings: [.unsafeFlags(["-L" + homeLibDir])]
         ),
         // The app.

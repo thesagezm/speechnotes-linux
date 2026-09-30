@@ -164,7 +164,7 @@ struct AppShell: View {
     private func sectionLabel(_ title: String) -> some View {
         Text(title.uppercased())
             .font(.caption.weight(.medium))
-            .foregroundColor(.gray)
+            .foregroundColor(theme.text)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 8)
             .padding(.bottom, 4)
@@ -215,7 +215,7 @@ struct AppShell: View {
                                 note: candidate.note,
                                 engineKind: EngineKind(rawValue: prefs.engineKind) ?? .espeak,
                                 speed: Float(prefs.rateMultiplier),
-                                voice: prefs.voice,
+                                voice: prefs.voiceForEngine(EngineKind(rawValue: prefs.engineKind) ?? .espeak),
                                 resumeFromUTF16: candidate.offset
                             )
                             resumeCandidate = nil

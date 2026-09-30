@@ -19,6 +19,10 @@ public final class Prefs: ObservableObject {
     @Published public var readAlongEnabled: Bool { didSet { save() } }
     @Published public var engineKind: String { didSet { save() } }
     @Published public var voice: String { didSet { save() } }
+    // Per-engine voice selection (EngineKind rawValue → VoiceCatalog id).
+    // `voice` above stays as the legacy espeak-only field for the iOS
+    // vocabulary; new selections land here.
+    @Published public var voicesByEngine: [String: String] { didSet { save() } }
     @Published public var rateMultiplier: Double { didSet { save() } }
     // Appearance ("system"|"light"|"dark", AccentChoice raw values).
     @Published public var appearance: String { didSet { save() } }
@@ -37,6 +41,7 @@ public final class Prefs: ObservableObject {
         readAlongEnabled = dict["readAlongEnabled"] as? Bool ?? true
         engineKind = dict["engineKind"] as? String ?? "espeak"
         voice = dict["voice"] as? String ?? ""
+        voicesByEngine = dict["voicesByEngine"] as? [String: String] ?? [:]
         rateMultiplier = dict["rateMultiplier"] as? Double ?? 1.0
         appearance = dict["appearance"] as? String ?? "system"
         accentChoice = dict["accentChoice"] as? String ?? "blue"
@@ -72,6 +77,7 @@ public final class Prefs: ObservableObject {
             "readAlongEnabled": readAlongEnabled,
             "engineKind": engineKind,
             "voice": voice,
+            "voicesByEngine": voicesByEngine,
             "rateMultiplier": rateMultiplier,
             "appearance": appearance,
             "accentChoice": accentChoice,

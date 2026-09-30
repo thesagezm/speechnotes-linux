@@ -22,7 +22,7 @@ struct AboutPane: View {
                         .font(.title.weight(.semibold))
                     Text("Version \(AppInfo.version)")
                         .font(.callout)
-                        .foregroundColor(.gray)
+                        .foregroundColor(theme.text)
                 }
                 card {
                     Text("Offline notes and books with text-to-speech. Notes, notebooks, books and speech all stay on this machine — nothing is uploaded. The data layer is byte-compatible with the iOS app, so a JEX round-trip moves a library between the two.")
@@ -49,7 +49,7 @@ struct AboutPane: View {
                             .font(.system(size: 12, design: .monospaced))
                         Text("Logs: \(AppPaths.logFile.path)")
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.gray)
+                            .foregroundColor(theme.text)
                     }
                 }
             }
@@ -78,7 +78,7 @@ struct AboutPane: View {
     private func captionHeader(_ title: String) -> some View {
         Text(title.uppercased())
             .font(.caption.weight(.medium))
-            .foregroundColor(.gray)
+            .foregroundColor(theme.text)
     }
 }
 
@@ -87,6 +87,7 @@ struct AboutPane: View {
 struct LogsPane: View {
     @State private var lines: [String] = []
     @State private var loadFailed = false
+    @State private var theme = ThemeController.shared
 
     var body: some View {
         VStack(spacing: 8) {
@@ -95,7 +96,7 @@ struct LogsPane: View {
                     .font(.title3.weight(.semibold))
                 Text("last \(lines.count) lines")
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
                 Spacer()
                 Button("Refresh") { load() }
                     .buttonStyle(.bordered)

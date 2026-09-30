@@ -32,7 +32,7 @@ struct NoteEditorPane: View {
                 Spacer()
                 Text(progressText)
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
             }
             HStack(spacing: 8) {
                 if tts.isPlaying(noteId: note.id) {
@@ -51,7 +51,7 @@ struct NoteEditorPane: View {
                             note: note,
                             engineKind: EngineKind(rawValue: prefs.engineKind) ?? .espeak,
                             speed: Float(prefs.rateMultiplier),
-                            voice: prefs.voice
+                            voice: prefs.voiceForEngine(EngineKind(rawValue: prefs.engineKind) ?? .espeak)
                         )
                     }
                     .buttonStyle(.bordered)
@@ -73,7 +73,7 @@ struct NoteEditorPane: View {
             if let status = exportStatus {
                 Text(status)
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
             }
             if tts.isPlaying(noteId: note.id), let sentence = tts.currentSentence {
                 Text("▸ \(sentence)")

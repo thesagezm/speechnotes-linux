@@ -65,6 +65,44 @@ public enum AccentChoice: String, CaseIterable, Sendable {
     }
 }
 
+/// Shared SCU-side surface/text styling — the colors GTK CSS can't reach
+/// (cards, rows, captions painted by the views themselves). Both schemes
+/// use ink-over-paper translucency, but light mode needs borders where dark
+/// gets away with a faint light wash alone.
+public struct SurfaceStyle {
+    public let scheme: ColorScheme
+
+    public init(scheme: ColorScheme) { self.scheme = scheme }
+
+    /// Card/row background: a subtle elevation over the window.
+    public var card: Color {
+        switch scheme {
+        case .light: return Color(white: 0.0, opacity: 0.05)
+        case .dark: return Color(white: 1.0, opacity: 0.055)
+        }
+    }
+
+    /// Secondary text (captions, metadata) — GTK's ~55% ink, not flat gray,
+    /// which goes muddy on the light background.
+    public var text: Color {
+        switch scheme {
+        case .light: return Color(white: 0.0, opacity: 0.58)
+        case .dark: return Color(white: 1.0, opacity: 0.64)
+        }
+    }
+}
+
+extension ThemeController {
+    /// `theme.text` at the call sites — secondary text in the active scheme.
+    public var text: Color {
+        SurfaceStyle(scheme: effectiveScheme).text
+    }
+
+    public var surface: SurfaceStyle {
+        SurfaceStyle(scheme: effectiveScheme)
+    }
+}
+
 extension Color {
     /// 0xRRGGBB convenience used by the accent palette.
     init(hex: UInt32) {
@@ -90,9 +128,10 @@ public enum Palette {
         let (windowBg, windowFg, viewBg, viewFg): (String, String, String, String)
         switch scheme {
         case .light:
-            // GTK4 "Default" theme light values.
+            // GTK4 "Default" light values, warmed one step so pure-white
+            // cards read as elevated rather than holes in the window.
             (windowBg, windowFg, viewBg, viewFg)
-                = ("#fafafb", "rgba(0, 0, 6, 0.8)", "#ffffff", "rgba(0, 0, 6, 0.8)")
+                = ("#f6f5f4", "rgba(0, 0, 6, 0.85)", "#ffffff", "rgba(0, 0, 6, 0.85)")
         case .dark:
             (windowBg, windowFg, viewBg, viewFg)
                 = ("#222226", "#ffffff", "#1d1d20", "#ffffff")
@@ -109,12 +148,24 @@ public enum Palette {
                 color: @window_fg_color;
             }
 
-            textview text {
+            textview, textview text {
+                background-color: @view_bg_color;
                 color: @view_fg_color;
             }
 
-            entry text {
+            entry {
+                background-color: @view_bg_color;
                 color: @window_fg_color;
+                border: 1px solid \(scheme == .light ? "rgba(0, 0, 6, 0.12)" : "rgba(255, 255, 255, 0.10)");
+                border-radius: 6px;
+            }
+
+            entry:focus-within {
+                border-color: @accent_bg_color;
+            }
+
+            scrolledwindow > viewport {
+                background-color: @window_bg_color;
             }
 
             button:hover {

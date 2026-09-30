@@ -232,4 +232,50 @@ final class BooksStoreTests: XCTestCase {
             "active book's files survive"
         )
     }
+
+    /// Audiobook import extracts the container's own chapter list (the
+    /// regression behind "table of contents not working"): an ffmpeg-built
+    /// M4B with two chpl chapters must import with both, not a single
+    /// full-duration chapter. Also exercises the import path's off-main
+    /// materialization (hardlink or copy) and ffprobe's JSON chapters.
+    @MainActor
+    func testAudioImportExtractsContainerChapters() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/ffmpeg"),
+              FileManager.default.isExecutableFile(atPath: "/usr/bin/ffprobe") else {
+            throw XCTSkip("ffmpeg/ffprobe not available to the Data test bundle")
+        }
+        let home = try freshHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = AppPaths.ensureDirectories()
+
+        let work = FileManager.default.temporaryDirectory
+            .appendingPathComponent("speechnotes-chapters-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+
+        let meta = work.appendingPathComponent("chapters.txt")
+        try ";FFMETADATA1\ntitle=Fixture book\n\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=Part One\n\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=2000\ntitle=Part Two\n"
+            .write(to: meta, atomically: true, encoding: .utf8)
+        let m4b = work.appendingPathComponent("fixture.m4b")
+        _ = BooksStore.runTool("/usr/bin/ffmpeg", [
+            "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-i", meta.path, "-map_metadata", "1",
+            "-c:a", "aac", "-f", "ipod", m4b.path,
+        ])
+        guard FileManager.default.fileExists(atPath: m4b.path) else {
+            throw XCTSkip("ffmpeg could not build the chaptered M4B fixture")
+        }
+
+        let store = BooksStore()
+        guard let book = await store.importBook(from: m4b) else {
+            XCTFail("import failed: \(store.importError ?? "nil book")")
+            return
+        }
+        XCTAssertNil(book.importError)
+        XCTAssertEqual(book.audioChapters?.count, 2, "container chapters must survive import")
+        XCTAssertEqual(book.audioChapters?.first?.title, "Part One")
+        XCTAssertEqual(book.audioChapters?.last?.title, "Part Two")
+        XCTAssertNotEqual(book.audioChapterSource, "single")
+        XCTAssertEqual(book.audioDuration ?? 0, 2.0, accuracy: 0.5)
+    }
 }

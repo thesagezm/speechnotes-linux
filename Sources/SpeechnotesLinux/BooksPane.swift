@@ -14,6 +14,7 @@ struct BooksPane: View {
 
     @Environment(\.chooseFile) private var chooseFile
     @State private var tts = TTSController.shared
+    @State private var theme = ThemeController.shared
 
     init(books: BooksStore, onSelect: @escaping (Book) -> Void) {
         self.books = books
@@ -29,7 +30,7 @@ struct BooksPane: View {
                 if books.isImporting {
                     Text("Importing…")
                         .font(.footnote)
-                        .foregroundColor(.gray)
+                        .foregroundColor(theme.text)
                 }
                 Button("Import Book…") {
                     Task { await importBook() }
@@ -43,7 +44,7 @@ struct BooksPane: View {
             if books.books.isEmpty {
                 Spacer()
                 Text("No books yet — import an EPUB, PDF or audiobook file.")
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
                 Spacer()
             } else {
                 ScrollView {
@@ -109,6 +110,8 @@ struct BinnedBookRow: View {
     let onRecover: () -> Void
     let onPurge: () -> Void
 
+    @State private var theme = ThemeController.shared
+
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
@@ -116,7 +119,7 @@ struct BinnedBookRow: View {
                     .font(.system(size: 13))
                 Text(caption)
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundColor(theme.text)
             }
             Spacer()
             Button("Recover") { onRecover() }
@@ -164,7 +167,7 @@ struct BookRowView: View {
                 HStack(spacing: 8) {
                     Text(book.authorOrFormat)
                         .font(.footnote)
-                        .foregroundColor(.gray)
+                        .foregroundColor(theme.text)
                     if let error = book.importError, !error.isEmpty {
                         Text("⚠︎ \(error)")
                             .font(.footnote)
@@ -172,7 +175,7 @@ struct BookRowView: View {
                     } else if let position = book.position {
                         Text("at chapter \(position.chapterIndex + 1)")
                             .font(.footnote)
-                            .foregroundColor(.gray)
+                            .foregroundColor(theme.text)
                     } else if isPlaying {
                         Text("playing")
                             .font(.footnote)
