@@ -24,13 +24,17 @@ struct BooksPane: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Text("Books")
+                    .font(.title3.weight(.semibold))
                 Spacer()
                 if books.isImporting {
                     Text("Importing…")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
                 }
                 Button("Import Book…") {
                     Task { await importBook() }
                 }
+                .buttonStyle(.bordered)
             }
             if let error = books.importError {
                 Text("Import failed: \(error)")
@@ -43,7 +47,7 @@ struct BooksPane: View {
                 Spacer()
             } else {
                 ScrollView {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 4) {
                         ForEach(books.books) { book in
                             BookRowView(
                                 book: book,
@@ -55,8 +59,38 @@ struct BooksPane: View {
                     }
                 }
             }
+            binnedSection
         }
         .padding(8)
+    }
+
+    /// The books recycle bin: same 30-day retention as notes, with
+    /// recover/purge/empty — the store side has existed since Phase 8, this
+    /// is the UI. Kept as a fixed bottom block (small counts); the shelf
+    /// scroll above takes the remaining space.
+    @ViewBuilder
+    private var binnedSection: some View {
+        let binned = books.deletedBooks
+        if !binned.isEmpty {
+            Divider()
+            HStack(spacing: 8) {
+                Text("Recycle bin (\(binned.count))")
+                    .font(.callout.weight(.medium))
+                Spacer()
+                Button("Empty bin") { books.emptyRecycleBin() }
+                    .buttonStyle(.borderless)
+            }
+            VStack(spacing: 4) {
+                ForEach(binned) { book in
+                    BinnedBookRow(
+                        book: book,
+                        onRecover: { books.restore(book) },
+                        onPurge: { books.purge(book) }
+                    )
+                }
+            }
+            .padding(.bottom, 4)
+        }
     }
 
     private func importBook() async {
@@ -66,6 +100,39 @@ struct BooksPane: View {
             defaultButtonLabel: "Import"
         ) else { return }
         _ = await books.importBook(from: url)
+    }
+}
+
+/// One binned-book row: title, purge countdown, recover / delete forever.
+struct BinnedBookRow: View {
+    let book: Book
+    let onRecover: () -> Void
+    let onPurge: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(book.title)
+                    .font(.system(size: 13))
+                Text(caption)
+                    .font(.footnote)
+                    .foregroundColor(.gray)
+            }
+            Spacer()
+            Button("Recover") { onRecover() }
+                .buttonStyle(.bordered)
+            Button("Delete forever") { onPurge() }
+                .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+    }
+
+    private var caption: String {
+        guard let deletedAt = book.deletedAt else { return "" }
+        let days = Int(Date().timeIntervalSince(deletedAt) / 86_400)
+        let remaining = max(0, Book.recycleRetentionDays - days)
+        return "purges in \(remaining) day\(remaining == 1 ? "" : "s")"
     }
 }
 

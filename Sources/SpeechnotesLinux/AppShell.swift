@@ -14,6 +14,7 @@ struct AppShell: View {
     @State private var prefs = Prefs.shared
     @State private var tts = TTSController.shared
     @State private var books = BooksStore.shared
+    @State private var audio = AudioBookController.shared
     @State private var theme = ThemeController.shared
 
     @State private var pane: Pane = .notes
@@ -35,6 +36,8 @@ struct AppShell: View {
         case books
         case recycleBin
         case settings
+        case about
+        case logs
     }
 
     init() {
@@ -49,12 +52,47 @@ struct AppShell: View {
     var body: some View {
         // Idempotent theme sync; re-runs whenever an appearance pref changes.
         let _ = theme.sync(appearance: prefs.appearance, accentChoice: prefs.accentChoice)
-        NavigationSplitView(
-            sidebar: { sidebar },
-            content: { middleColumn },
-            detail: { detailColumn }
-        )
+        VStack(spacing: 0) {
+            NavigationSplitView(
+                sidebar: { sidebar },
+                content: { middleColumn },
+                detail: { detailColumn }
+            )
+            // The persistent transport: survives navigation, like the iOS
+            // mini-player. Sits under the split view so it never covers
+            // content.
+            if let playback = activePlayback {
+                Divider()
+                MiniPlayerBar(playback: playback)
+            }
+        }
         .colorScheme(theme.effectiveScheme)
+    }
+
+    /// The active run, resolved for the mini-player: audiobook first (it and
+    /// TTS are mutually exclusive by controller contract), then TTS — a note
+    /// id resolves through NotesStore, anything else through the shelf
+    /// (book TTS runs under the book's id).
+    private var activePlayback: ActivePlayback? {
+        if let pos = audio.position, audio.isBusy,
+           let book = books.allBooks.first(where: { $0.id == pos.bookId }) {
+            return .audiobook(
+                book: book,
+                chapterIndex: pos.chapterIndex,
+                seconds: pos.seconds,
+                fraction: pos.fraction,
+                paused: audio.state == .paused
+            )
+        }
+        if let pos = tts.position, tts.isBusy {
+            if let note = notes.allNotes.first(where: { $0.id == pos.noteId }) {
+                return .noteTTS(note: note, fraction: pos.fraction, paused: tts.state == .paused)
+            }
+            if let book = books.allBooks.first(where: { $0.id == pos.noteId }) {
+                return .bookTTS(book: book, fraction: pos.fraction, paused: tts.state == .paused)
+            }
+        }
+        return nil
     }
 
     // MARK: - Sidebar
@@ -103,6 +141,12 @@ struct AppShell: View {
             }
             sidebarButton(title: "Settings", isActive: pane == .settings) {
                 pane = .settings
+            }
+            sidebarButton(title: "About", isActive: pane == .about) {
+                pane = .about
+            }
+            sidebarButton(title: "Logs", isActive: pane == .logs) {
+                pane = .logs
             }
             Spacer()
             HStack(spacing: 8) {
@@ -200,6 +244,10 @@ struct AppShell: View {
             }
         } else if pane == .recycleBin {
             RecycleBinPane(notes: notes)
+        } else if pane == .about {
+            AboutPane()
+        } else if pane == .logs {
+            LogsPane()
         } else {
             SettingsPane(prefs: prefs, notes: notes, notebooks: notebooks)
         }
@@ -225,6 +273,11 @@ struct AppShell: View {
             placeholder(
                 title: "Recycle Bin",
                 detail: "Deleted notes stay here for \(Note.recycleRetentionDays) days before they are purged."
+            )
+        } else if pane == .about || pane == .logs {
+            placeholder(
+                title: pane == .about ? "About" : "Logs",
+                detail: "Shown in the middle column."
             )
         } else {
             placeholder(title: "Settings", detail: "Preferences are on the left.")
