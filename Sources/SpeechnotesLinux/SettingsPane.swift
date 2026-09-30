@@ -213,6 +213,13 @@ struct SettingsPane: View {
                 if installed {
                     Text("Installed ✓")
                         .foregroundColor(theme.text)
+                } else if modelStatus[key] == "downloading…" {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("downloading…")
+                            .font(.footnote)
+                            .foregroundColor(theme.text)
+                    }
                 } else {
                     Button("Download") {
                         modelStatus[key] = "downloading…"

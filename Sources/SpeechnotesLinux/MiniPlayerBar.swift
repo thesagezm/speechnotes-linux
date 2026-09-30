@@ -40,6 +40,18 @@ enum ActivePlayback {
         }
     }
 
+    /// True while the run has started but no audio position has arrived yet
+    /// — the engine is still loading/synthesizing the first chunk (Kokoro
+    /// can take a couple of seconds). The spinner replaces a frozen "0%".
+    var isPreparing: Bool {
+        switch self {
+        case .noteTTS(_, let fraction, let paused),
+             .bookTTS(_, let fraction, let paused),
+             .audiobook(_, _, _, let fraction, let paused):
+            return !paused && fraction == 0
+        }
+    }
+
     var progressLabel: String {
         switch self {
         case .noteTTS(_, let fraction, _),
@@ -58,15 +70,48 @@ enum ActivePlayback {
 
 /// The persistent transport under the shell: playback survives navigation,
 /// mirroring the iOS mini-player. Pause/resume/stop route to whichever
-/// controller owns the active run.
+/// controller owns the active run. Self-contained: it observes the
+/// controllers and stores directly, so the shell only flips on the rare
+/// visibility transitions (via PlaybackPresence) — never on position ticks.
 struct MiniPlayerBar: View {
-    let playback: ActivePlayback
-
     @State private var tts = TTSController.shared
     @State private var audio = AudioBookController.shared
+    @State private var notes = NotesStore.shared
+    @State private var books = BooksStore.shared
     @State private var theme = ThemeController.shared
 
+    /// The active run, resolved locally: audiobook first (it and TTS are
+    /// mutually exclusive by controller contract), then TTS — a note id
+    /// resolves through NotesStore, anything else through the shelf.
+    private var activePlayback: ActivePlayback? {
+        if let pos = audio.position, audio.isBusy,
+           let book = books.allBooks.first(where: { $0.id == pos.bookId }) {
+            return .audiobook(
+                book: book,
+                chapterIndex: pos.chapterIndex,
+                seconds: pos.seconds,
+                fraction: pos.fraction,
+                paused: audio.state == .paused
+            )
+        }
+        if let pos = tts.position, tts.isBusy {
+            if let note = notes.allNotes.first(where: { $0.id == pos.noteId }) {
+                return .noteTTS(note: note, fraction: pos.fraction, paused: tts.state == .paused)
+            }
+            if let book = books.allBooks.first(where: { $0.id == pos.noteId }) {
+                return .bookTTS(book: book, fraction: pos.fraction, paused: tts.state == .paused)
+            }
+        }
+        return nil
+    }
+
     var body: some View {
+        if let playback = activePlayback {
+            content(playback)
+        }
+    }
+
+    private func content(_ playback: ActivePlayback) -> some View {
         HStack(spacing: 10) {
             Text(playback.isPaused ? "❙❙" : "▸")
                 .font(.system(size: 12, weight: .medium))
@@ -82,17 +127,20 @@ struct MiniPlayerBar: View {
                     .foregroundColor(theme.text)
             }
             Spacer()
+            if playback.isPreparing {
+                ProgressView()
+            }
             Text(playback.progressLabel)
                 .font(.footnote)
                 .foregroundColor(theme.text)
             if playback.isPaused {
-                Button("▶ Resume") { control(.resume) }
+                Button("▶ Resume") { control(.resume, playback) }
                     .buttonStyle(.bordered)
             } else {
-                Button("❙❙ Pause") { control(.pause) }
+                Button("❙❙ Pause") { control(.pause, playback) }
                     .buttonStyle(.bordered)
             }
-            Button("■ Stop") { control(.stop) }
+            Button("■ Stop") { control(.stop, playback) }
                 .buttonStyle(.bordered)
         }
         .padding(.horizontal, 12)
@@ -102,7 +150,7 @@ struct MiniPlayerBar: View {
 
     private var barBackground: Color {
         switch theme.effectiveScheme {
-        case .light: return Color(white: 0.0, opacity: 0.035)
+        case .light: return Color(white: 0.0, opacity: 0.05)
         case .dark: return Color(white: 1.0, opacity: 0.045)
         }
     }
@@ -111,7 +159,7 @@ struct MiniPlayerBar: View {
         case pause, resume, stop
     }
 
-    private func control(_ action: TransportAction) {
+    private func control(_ action: TransportAction, _ playback: ActivePlayback) {
         switch playback {
         case .noteTTS, .bookTTS:
             switch action {

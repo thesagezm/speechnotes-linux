@@ -65,6 +65,7 @@ public final class AudioBookController: ObservableObject {
         position = nil
         lastError = nil
         activeBookmarkKey = BookmarkStore.bookKey(book.id.uuidString, chapter: chapterIndex)
+        PlaybackPresence.shared.setAudioActive(true)
 
         worker = Task.detached(priority: .userInitiated) { [weak self] in
             await self?.runChapter(
@@ -94,6 +95,7 @@ public final class AudioBookController: ObservableObject {
         playingBookId = nil
         currentBook = nil
         activeBookmarkKey = nil
+        PlaybackPresence.shared.setAudioActive(false)
     }
 
     public func pause() {
@@ -200,5 +202,6 @@ public final class AudioBookController: ObservableObject {
         playingBookId = nil
         currentBook = nil
         activeBookmarkKey = nil
+        PlaybackPresence.shared.setAudioActive(false)
     }
 }

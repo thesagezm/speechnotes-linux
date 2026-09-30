@@ -28,9 +28,12 @@ struct BooksPane: View {
                     .font(.title3.weight(.semibold))
                 Spacer()
                 if books.isImporting {
-                    Text("Importing…")
-                        .font(.footnote)
-                        .foregroundColor(theme.text)
+                    HStack(spacing: 6) {
+                        ProgressView()
+                        Text("Importing…")
+                            .font(.footnote)
+                            .foregroundColor(theme.text)
+                    }
                 }
                 Button("Import Book…") {
                     Task { await importBook() }
@@ -59,10 +62,12 @@ struct BooksPane: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             binnedSection
         }
         .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     /// The books recycle bin: same 30-day retention as notes, with

@@ -43,13 +43,16 @@ struct NotesListPane: View {
                         ? "Create your first note with ＋ New note."
                         : "Nothing matches “\(searchText)”.")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(filtered, selection: $selectedNoteId) { note in
                     row(for: note)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Row

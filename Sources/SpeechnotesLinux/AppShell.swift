@@ -1,4 +1,5 @@
 import Foundation
+import Log
 import SwiftCrossUI
 import Data
 import TTSEngine
@@ -12,10 +13,9 @@ struct AppShell: View {
     @State private var notes = NotesStore.shared
     @State private var notebooks = NotebooksStore.shared
     @State private var prefs = Prefs.shared
-    @State private var tts = TTSController.shared
     @State private var books = BooksStore.shared
-    @State private var audio = AudioBookController.shared
     @State private var theme = ThemeController.shared
+    @State private var presence = PlaybackPresence.shared
 
     @State private var pane: Pane = .notes
     @State private var selectedNoteId: UUID?
@@ -50,49 +50,75 @@ struct AppShell: View {
     }
 
     var body: some View {
+        let t0 = DispatchTime.now()
+        let content = mainBody
+        RenderProbe.recordBodyEval(
+            pane: String(describing: pane),
+            durationMs: Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1e6
+        )
+        return content
+    }
+
+    private var mainBody: some View {
         // Idempotent theme sync; re-runs whenever an appearance pref changes.
         let _ = theme.sync(appearance: prefs.appearance, accentChoice: prefs.accentChoice)
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             NavigationSplitView(
                 sidebar: { sidebar },
                 content: { middleColumn },
                 detail: { detailColumn }
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             // The persistent transport: survives navigation, like the iOS
             // mini-player. Sits under the split view so it never covers
             // content.
-            if let playback = activePlayback {
+            if presence.isVisible {
                 Divider()
-                MiniPlayerBar(playback: playback)
+                MiniPlayerBar()
             }
         }
         .colorScheme(theme.effectiveScheme)
+        .task { await runBenchIfRequested() }
     }
 
-    /// The active run, resolved for the mini-player: audiobook first (it and
-    /// TTS are mutually exclusive by controller contract), then TTS — a note
-    /// id resolves through NotesStore, anything else through the shelf
-    /// (book TTS runs under the book's id).
-    private var activePlayback: ActivePlayback? {
-        if let pos = audio.position, audio.isBusy,
-           let book = books.allBooks.first(where: { $0.id == pos.bookId }) {
-            return .audiobook(
-                book: book,
-                chapterIndex: pos.chapterIndex,
-                seconds: pos.seconds,
-                fraction: pos.fraction,
-                paused: audio.state == .paused
-            )
+    /// SPEECHNOTES_BENCH=1 turns this launch into a pane-switch benchmark:
+    /// the same transitions a user clicks, timed end to end, then exit(0).
+    private func runBenchIfRequested() async {
+        guard RenderProbe.benchRequested else { return }
+        RenderProbe.benchRequested = false
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        Log.info("BENCH: starting pane-switch benchmark")
+
+        await benchSwitch("notes→settings") { pane = .settings }
+        await benchSwitch("settings→notes") { pane = .notes }
+        await benchSwitch("notes→books (tab click)") {
+            pane = .books
+            books.refresh()
         }
-        if let pos = tts.position, tts.isBusy {
-            if let note = notes.allNotes.first(where: { $0.id == pos.noteId }) {
-                return .noteTTS(note: note, fraction: pos.fraction, paused: tts.state == .paused)
-            }
-            if let book = books.allBooks.first(where: { $0.id == pos.noteId }) {
-                return .bookTTS(book: book, fraction: pos.fraction, paused: tts.state == .paused)
+        await benchSwitch("books→settings") { pane = .settings }
+        await benchSwitch("settings→notes (2nd)") { pane = .notes }
+        if let first = books.books.first {
+            await benchSwitch("open book '\(first.title)'") { selectedBookId = first.id }
+            await benchSwitch("book→notes") {
+                pane = .notes
+                selectedBookId = nil
             }
         }
-        return nil
+        Log.info("BENCH: complete")
+        // The bench instance owns the GTK app id — exit so the real app can
+        // run.
+        exit(0)
+    }
+
+    private func benchSwitch(
+        _ label: String,
+        _ change: @escaping @MainActor () -> Void
+    ) async {
+        let start = DispatchTime.now()
+        change()
+        _ = await RenderProbe.settledLatency()
+        let total = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e6
+        Log.info(String(format: "BENCH: %@ settled in %.0fms", label, total))
     }
 
     // MARK: - Sidebar
@@ -199,89 +225,116 @@ struct AppShell: View {
     }
 
     // MARK: - Columns
+    //
+    // Both columns render through CachedSwitchView: pane switches swap a
+    // mounted widget instead of destroying and rebuilding the pane's whole
+    // widget tree (SwiftCrossUI's if/else rebuilds — hundreds of ms per
+    // click for settings-sized trees). Slot order is load-bearing: each
+    // slot must always render the same concrete view type.
 
-    @ViewBuilder
-    private var middleColumn: some View {
-        if pane == .notes {
-            VStack(spacing: 0) {
-                if let candidate = resumeCandidate {
-                    HStack(spacing: 8) {
-                        Text("Resume “\(candidate.note.title)”?")
-                            .font(.callout)
-                        Spacer()
-                        Button("Resume") {
-                            selectedNoteId = candidate.note.id
-                            tts.play(
-                                note: candidate.note,
-                                engineKind: EngineKind(rawValue: prefs.engineKind) ?? .espeak,
-                                speed: Float(prefs.rateMultiplier),
-                                voice: prefs.voiceForEngine(EngineKind(rawValue: prefs.engineKind) ?? .espeak),
-                                resumeFromUTF16: candidate.offset
-                            )
-                            resumeCandidate = nil
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Dismiss") { resumeCandidate = nil }
-                            .buttonStyle(.borderless)
-                    }
-                    .padding(10)
-                    .background(theme.accent.opacity(0.08))
-                    .cornerRadius(6)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 8)
-                }
-                NotesListPane(
-                    notes: notes,
-                    notebooks: notebooks,
-                    prefs: prefs,
-                    selectedNoteId: $selectedNoteId,
-                    searchText: $searchText
-                )
-            }
-        } else if pane == .books {
-            BooksPane(books: books) { book in
-                selectedBookId = book.id
-            }
-        } else if pane == .recycleBin {
-            RecycleBinPane(notes: notes)
-        } else if pane == .about {
-            AboutPane()
-        } else if pane == .logs {
-            LogsPane()
-        } else {
-            SettingsPane(prefs: prefs, notes: notes, notebooks: notebooks)
+    private var middleIndex: Int {
+        switch pane {
+        case .notes: return 0
+        case .books: return 1
+        case .recycleBin: return 2
+        case .about: return 3
+        case .logs: return 4
+        case .settings: return 5
         }
     }
 
-    @ViewBuilder
-    private var detailColumn: some View {
-        if pane == .notes {
-            if let id = selectedNoteId,
-               let note = notes.allNotes.first(where: { $0.id == id }) {
-                NoteEditorPane(note: note, notes: notes)
-            } else {
-                placeholder(title: "No note selected", detail: "Create or pick a note in the list.")
-            }
-        } else if pane == .books {
-            if let id = selectedBookId,
-               let book = books.allBooks.first(where: { $0.id == id }) {
-                BookReaderPane(book: book, books: books)
-            } else {
-                placeholder(title: "No book selected", detail: "Import or pick a book in the shelf.")
-            }
-        } else if pane == .recycleBin {
-            placeholder(
-                title: "Recycle Bin",
-                detail: "Deleted notes stay here for \(Note.recycleRetentionDays) days before they are purged."
-            )
-        } else if pane == .about || pane == .logs {
-            placeholder(
-                title: pane == .about ? "About" : "Logs",
-                detail: "Shown in the middle column."
-            )
-        } else {
-            placeholder(title: "Settings", detail: "Preferences are on the left.")
+    private var detailIndex: Int {
+        switch pane {
+        case .notes: return 0
+        case .books: return 1
+        case .recycleBin: return 2
+        case .about, .logs: return 3
+        case .settings: return 4
         }
+    }
+
+    private var middleColumn: some View {
+        CachedSwitchView(
+            activeIndex: middleIndex,
+            branches: [
+                AnyView(notesMiddle),
+                AnyView(BooksPane(books: books) { book in
+                    selectedBookId = book.id
+                }),
+                AnyView(RecycleBinPane(notes: notes)),
+                AnyView(AboutPane()),
+                AnyView(LogsPane()),
+                AnyView(SettingsPane(prefs: prefs, notes: notes, notebooks: notebooks)),
+            ]
+        )
+    }
+
+    @ViewBuilder
+    private var notesMiddle: some View {
+        VStack(spacing: 0) {
+            if let candidate = resumeCandidate {
+                HStack(spacing: 8) {
+                    Text("Resume “\(candidate.note.title)”?")
+                        .font(.callout)
+                    Spacer()
+                    Button("Resume") {
+                        selectedNoteId = candidate.note.id
+                        TTSController.shared.play(
+                            note: candidate.note,
+                            engineKind: EngineKind(rawValue: prefs.engineKind) ?? .espeak,
+                            speed: Float(prefs.rateMultiplier),
+                            voice: prefs.voiceForEngine(EngineKind(rawValue: prefs.engineKind) ?? .espeak),
+                            resumeFromUTF16: candidate.offset
+                        )
+                        resumeCandidate = nil
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Dismiss") { resumeCandidate = nil }
+                        .buttonStyle(.borderless)
+                }
+                .padding(10)
+                .background(theme.accent.opacity(0.08))
+                .cornerRadius(6)
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
+            }
+            NotesListPane(
+                notes: notes,
+                notebooks: notebooks,
+                prefs: prefs,
+                selectedNoteId: $selectedNoteId,
+                searchText: $searchText
+            )
+        }
+    }
+
+    private var detailColumn: some View {
+        CachedSwitchView(
+            activeIndex: detailIndex,
+            branches: [
+                AnyView(NotesDetailHost(note: selectedNote, notes: notes)),
+                AnyView(BooksDetailHost(book: selectedBook, books: books)),
+                AnyView(placeholder(
+                    title: "Recycle Bin",
+                    detail: "Deleted notes stay here for \(Note.recycleRetentionDays) days before they are purged."
+                )),
+                AnyView(placeholder(
+                    title: "About & Logs",
+                    detail: "Shown in the middle column."
+                )),
+                AnyView(placeholder(title: "Settings", detail: "Preferences are on the left.")),
+            ]
+        )
+    }
+
+    private var selectedNote: Note? {
+        guard pane == .notes, let id = selectedNoteId else { return nil }
+        return notes.allNotes.first(where: { $0.id == id })
+    }
+
+    private var selectedBook: Book? {
+        guard pane == .books, let id = selectedBookId else { return nil }
+        return books.allBooks.first(where: { $0.id == id })
     }
 
     private func placeholder(title: String, detail: String) -> some View {
@@ -289,6 +342,44 @@ struct AppShell: View {
             Text(title)
         } description: {
             Text(detail)
+        }
+    }
+}
+
+/// The notes detail slot: editor when a note is selected, placeholder
+/// otherwise. Its concrete type must stay stable across renders — it is a
+/// fixed CachedSwitchView slot.
+struct NotesDetailHost: View {
+    let note: Note?
+    let notes: NotesStore
+
+    var body: some View {
+        if let note {
+            NoteEditorPane(note: note, notes: notes)
+        } else {
+            ContentUnavailableView {
+                Text("No note selected")
+            } description: {
+                Text("Create or pick a note in the list.")
+            }
+        }
+    }
+}
+
+/// The books detail slot (same contract as NotesDetailHost).
+struct BooksDetailHost: View {
+    let book: Book?
+    let books: BooksStore
+
+    var body: some View {
+        if let book {
+            BookReaderPane(book: book, books: books)
+        } else {
+            ContentUnavailableView {
+                Text("No book selected")
+            } description: {
+                Text("Import or pick a book in the shelf.")
+            }
         }
     }
 }

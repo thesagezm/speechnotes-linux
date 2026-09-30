@@ -88,8 +88,10 @@ struct NoteEditorPane: View {
                 .font(.title2.weight(.semibold))
             TextEditor(text: textBinding)
                 .font(.system(size: editorFontSize))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var editorFontSize: Double {

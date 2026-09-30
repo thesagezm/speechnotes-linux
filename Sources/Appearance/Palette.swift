@@ -125,23 +125,74 @@ public enum Palette {
     public static let providerPriority: UInt32 = 700
 
     public static func themeCSS(scheme: ColorScheme, accent: AccentChoice) -> String {
-        let (windowBg, windowFg, viewBg, viewFg): (String, String, String, String)
+        // The COMPLETE standard named-color set, both schemes. Partial
+        // overrides lose: any named color left to the system theme (a dark
+        // one on COSMIC) keeps its dark panel under this app's dark text —
+        // the "black on black, nothing visible" light-mode failure.
+        let c: [String: String]
         switch scheme {
         case .light:
-            // GTK4 "Default" light values, warmed one step so pure-white
-            // cards read as elevated rather than holes in the window.
-            (windowBg, windowFg, viewBg, viewFg)
-                = ("#f6f5f4", "rgba(0, 0, 6, 0.85)", "#ffffff", "rgba(0, 0, 6, 0.85)")
+            c = [
+                "window_bg": "#f6f5f4",
+                "window_fg": "rgba(0, 0, 6, 0.85)",
+                "view_bg": "#ffffff",
+                "view_fg": "rgba(0, 0, 6, 0.85)",
+                "headerbar_bg": "#fbfaf9",
+                "headerbar_fg": "rgba(0, 0, 6, 0.85)",
+                "headerbar_backdrop": "#f2f1f0",
+                "sidebar_bg": "#f2f1f0",
+                "sidebar_fg": "rgba(0, 0, 6, 0.85)",
+                "sidebar_backdrop": "#f6f5f4",
+                "card_bg": "#ffffff",
+                "card_fg": "rgba(0, 0, 6, 0.85)",
+                "popover_bg": "#ffffff",
+                "popover_fg": "rgba(0, 0, 6, 0.85)",
+                "dialog_bg": "#fafaf9",
+                "dialog_fg": "rgba(0, 0, 6, 0.85)",
+                "thumb_bg": "#e8e7e6",
+                "border": "rgba(0, 0, 6, 0.12)",
+            ]
         case .dark:
-            (windowBg, windowFg, viewBg, viewFg)
-                = ("#222226", "#ffffff", "#1d1d20", "#ffffff")
+            c = [
+                "window_bg": "#222226",
+                "window_fg": "#ffffff",
+                "view_bg": "#1d1d20",
+                "view_fg": "#ffffff",
+                "headerbar_bg": "#2a2a2e",
+                "headerbar_fg": "#ffffff",
+                "headerbar_backdrop": "#222226",
+                "sidebar_bg": "#28282c",
+                "sidebar_fg": "#ffffff",
+                "sidebar_backdrop": "#222226",
+                "card_bg": "#2e2e33",
+                "card_fg": "#ffffff",
+                "popover_bg": "#323236",
+                "popover_fg": "#ffffff",
+                "dialog_bg": "#323236",
+                "dialog_fg": "#ffffff",
+                "thumb_bg": "#3a3a3f",
+                "border": "rgba(255, 255, 255, 0.10)",
+            ]
         }
 
         var css = """
-            @define-color window_bg_color \(windowBg);
-            @define-color window_fg_color \(windowFg);
-            @define-color view_bg_color \(viewBg);
-            @define-color view_fg_color \(viewFg);
+            @define-color window_bg_color \(c["window_bg"]!);
+            @define-color window_fg_color \(c["window_fg"]!);
+            @define-color view_bg_color \(c["view_bg"]!);
+            @define-color view_fg_color \(c["view_fg"]!);
+            @define-color headerbar_bg_color \(c["headerbar_bg"]!);
+            @define-color headerbar_fg_color \(c["headerbar_fg"]!);
+            @define-color headerbar_backdrop_color \(c["headerbar_backdrop"]!);
+            @define-color sidebar_bg_color \(c["sidebar_bg"]!);
+            @define-color sidebar_fg_color \(c["sidebar_fg"]!);
+            @define-color sidebar_backdrop_color \(c["sidebar_backdrop"]!);
+            @define-color card_bg_color \(c["card_bg"]!);
+            @define-color card_fg_color \(c["card_fg"]!);
+            @define-color popover_bg_color \(c["popover_bg"]!);
+            @define-color popover_fg_color \(c["popover_fg"]!);
+            @define-color dialog_bg_color \(c["dialog_bg"]!);
+            @define-color dialog_fg_color \(c["dialog_fg"]!);
+            @define-color thumbnail_bg_color \(c["thumb_bg"]!);
 
             window {
                 background-color: @window_bg_color;
@@ -156,7 +207,7 @@ public enum Palette {
             entry {
                 background-color: @view_bg_color;
                 color: @window_fg_color;
-                border: 1px solid \(scheme == .light ? "rgba(0, 0, 6, 0.12)" : "rgba(255, 255, 255, 0.10)");
+                border: 1px solid \(c["border"]!);
                 border-radius: 6px;
             }
 
@@ -166,6 +217,10 @@ public enum Palette {
 
             scrolledwindow > viewport {
                 background-color: @window_bg_color;
+            }
+
+            progressbar trough {
+                background-color: \(c["thumb_bg"]!);
             }
 
             button:hover {

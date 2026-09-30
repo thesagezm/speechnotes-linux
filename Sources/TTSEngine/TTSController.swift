@@ -109,6 +109,7 @@ public final class TTSController: ObservableObject {
         state = .speaking
         position = nil
         currentSentence = nil
+        PlaybackPresence.shared.setTTSActive(true)
         worker = Task.detached(priority: .userInitiated) { [weak self] in
             await self?.runPipeline(
                 chunks: chunks,
@@ -137,6 +138,7 @@ public final class TTSController: ObservableObject {
         currentSentence = nil
         playingNoteId = nil
         activeBookmarkKey = nil
+        PlaybackPresence.shared.setTTSActive(false)
     }
 
     public func pause() {
@@ -233,5 +235,6 @@ public final class TTSController: ObservableObject {
         currentSentence = nil
         playingNoteId = nil
         activeBookmarkKey = nil
+        PlaybackPresence.shared.setTTSActive(false)
     }
 }
