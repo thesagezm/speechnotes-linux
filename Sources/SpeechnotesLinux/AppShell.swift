@@ -24,11 +24,9 @@ struct AppShell: View {
     @State private var searchText = ""
     @State private var newNotebookName = ""
     @State private var resumeCandidate: ResumeCandidate?
-    /// Set by the Ctrl+F shortcut; the notes list consumes and clears it.
-    @State private var focusSearchRequested = false
-    /// Counter form of the same request — a Bool cannot tell "requested
-    /// again while already requested" from "never requested", which would
-    /// leave a second Ctrl+F doing nothing.
+    /// Bumped by the Ctrl+F shortcut. A counter, not a flag: a Bool cannot
+    /// tell "requested again while already requested" from "never
+    /// requested", which would leave a second Ctrl+F doing nothing.
     @State private var focusSearchCounter = 0
     /// Bumped by the render shortcut; the editor consumes the newest value.
     @State private var wavRenderRequested = 0
@@ -384,8 +382,11 @@ struct AppShell: View {
     private func installHooks() {
         commands.hooks = AppCommands.Hooks(
             focusSearch: {
-                focusSearchRequested = true
                 focusSearchCounter &+= 1
+                // Ctrl+F from another pane is only useful if it also lands
+                // there: the shell switches, and the list's focus grab
+                // happens on the next render.
+                pane = .notes
             },
             renderSelectedToWav: { wavRenderRequested &+= 1 }
         )

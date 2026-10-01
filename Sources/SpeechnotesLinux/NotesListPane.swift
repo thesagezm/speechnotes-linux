@@ -75,7 +75,15 @@ struct NotesListPane: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
+                // The search entry is the Ctrl+F target. SwiftCrossUI has
+                // no focus API, so focus is grabbed straight on the GTK
+                // entry (`.inspect` hands over the live widget) — that is
+                // the only way a keyboard-driven user can start typing a
+                // search without clicking first.
                 TextField("Search notes…", text: searchField)
+                    .inspect { entry in
+                        SearchFieldFocus.attach(to: entry, request: focusSearchRequest)
+                    }
                 Button("Sort: \(sortLabel)") { cycleSort() }
                     .buttonStyle(.borderless)
                 Button("＋ New note") { createNote() }
@@ -109,6 +117,7 @@ struct NotesListPane: View {
         .onChange(of: prefs.activeNotebookScope) { refreshDerived() }
         .onChange(of: prefs.notesSortOrder) { refreshDerived() }
         .onChange(of: searchText) { refreshDerived() }
+        .onChange(of: focusSearchRequest) { SearchFieldFocus.request(focusSearchRequest) }
         // The store's version counter is the cheapest signal that a note was
         // created, edited, pinned, starred, moved or deleted.
         .onChange(of: notes.version) { refreshDerived() }
