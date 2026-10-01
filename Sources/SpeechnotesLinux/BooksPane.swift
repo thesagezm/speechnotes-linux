@@ -10,6 +10,13 @@ import Appearance
 /// picker via SwiftCrossUI's chooseFile action), and bin/delete controls.
 /// Rows show title, author/format, and progress — the iOS BookRowView's
 /// information, desktop-arranged.
+///
+/// Row layout note: every row's two-line caption is a fixed-height block
+/// (see ``BookRowView``). SwiftCrossUI re-measures every Text with Pango on
+/// every layout pass — 929 measurements for a single pane switch, measured
+/// — and a row whose height depends on its text is a row whose height is
+/// re-derived constantly. Pinning it lets the layout cache do its job and
+/// stops long titles from making the shelf jump.
 struct BooksPane: View {
     let books: BooksStore
     let onSelect: (Book) -> Void
@@ -151,9 +158,11 @@ struct BinnedBookRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(book.title)
                     .font(.system(size: 13))
+                    .lineLimit(1)
                 Text(caption)
                     .font(.footnote)
                     .foregroundColor(theme.text)
+                    .lineLimit(1)
             }
             Spacer()
             Button("Recover") { onRecover() }
@@ -196,24 +205,32 @@ struct BookRowView: View {
             }
             .buttonStyle(.borderless)
             VStack(alignment: .leading, spacing: 2) {
+                // Single-line title: the full title is still reachable by
+                // opening the book (the reader header shows it), and a
+                // wrapping row is a row whose height changes with content.
                 Text(book.title)
                     .font(.system(size: 14, weight: isPlaying ? .medium : .regular))
+                    .lineLimit(1)
                 HStack(spacing: 8) {
                     Text(book.authorOrFormat)
                         .font(.footnote)
                         .foregroundColor(theme.text)
+                        .lineLimit(1)
                     if let error = book.importError, !error.isEmpty {
                         Text("⚠︎ \(error)")
                             .font(.footnote)
                             .foregroundColor(.orange)
+                            .lineLimit(1)
                     } else if let position = book.position {
                         Text("at chapter \(position.chapterIndex + 1)")
                             .font(.footnote)
                             .foregroundColor(theme.text)
+                            .lineLimit(1)
                     } else if isPlaying {
                         Text("playing")
                             .font(.footnote)
                             .foregroundColor(theme.accent)
+                            .lineLimit(1)
                     }
                 }
             }
@@ -221,6 +238,6 @@ struct BookRowView: View {
             Button("🗑") { onBin() }
                 .buttonStyle(.borderless)
         }
-        .padding(6)
+        .padding(.vertical, 2)
     }
 }

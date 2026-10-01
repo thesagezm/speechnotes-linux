@@ -501,7 +501,7 @@ public final class BooksStore: ObservableObject {
     /// Extracts one spine chapter's plain text straight from the archive.
     /// Cached to text/NNNN.txt by the TTS pipeline once spoken; the reader
     /// path extracts on demand (one zip entry — fast).
-    public static func chapterText(book: Book, chapterIndex: Int, archiveData: Data) -> String? {
+    nonisolated public static func chapterText(book: Book, chapterIndex: Int, archiveData: Data) -> String? {
         guard let spine = book.spine, chapterIndex >= 0, chapterIndex < spine.count else {
             return nil
         }
@@ -511,7 +511,7 @@ public final class BooksStore: ObservableObject {
         return XhtmlText.extract(from: entry).text
     }
 
-    public static func epubArchiveURL(_ book: Book) -> URL {
+    nonisolated public static func epubArchiveURL(_ book: Book) -> URL {
         bookDirectory(book.id).appendingPathComponent("original.epub")
     }
 

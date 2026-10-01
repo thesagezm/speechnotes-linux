@@ -278,28 +278,50 @@ struct BookReaderPane: View {
                 chapterText = nil
                 return
             }
-            do {
-                let data = try Data(contentsOf: BooksStore.epubArchiveURL(book), options: .mappedIfSafe)
-                chapterText = BooksStore.chapterText(book: book, chapterIndex: index, archiveData: data)
-                if chapterText == nil { loadFailed = true }
-            } catch {
-                chapterText = nil
-                loadFailed = true
+            // Off the main actor: a large EPUB is a few MB of zip to walk,
+            // and decompressing a chapter took visible time on the UI thread
+            // (the whole pane re-laid out behind the freeze).
+            let book = self.book
+            let extraction = Task.detached(priority: .userInitiated) { () -> String? in
+                guard let data = try? Data(
+                    contentsOf: BooksStore.epubArchiveURL(book), options: .mappedIfSafe
+                ) else { return nil }
+                return BooksStore.chapterText(book: book, chapterIndex: index, archiveData: data)
+            }
+            loadFailed = false
+            Task {
+                let result = await extraction.value
+                // A newer chapter may have been opened while this one
+                // decompressed; only the live index may write the text.
+                guard chapterIndex == index else { return }
+                chapterText = result
+                loadFailed = result == nil
             }
         case .pdf:
             // PDF chapters are page ranges; pdftotext extracts the range.
+            // It is a process spawn with a waitUntilExit, so it too runs
+            // off the main actor.
             guard let chapters = book.pdfChapters, index < chapters.count else {
                 chapterText = nil
                 return
             }
             let chapter = chapters[index]
-            let pdfPath = BooksStore.bookDirectory(book.id).appendingPathComponent("original.pdf").path
-            chapterText = PdfTextLinux.text(
-                pages: chapter.startPage + 1,
-                to: chapter.endPage + 1,
-                pdfPath: pdfPath
-            )
-            if chapterText == nil { loadFailed = true }
+            let pdfPath = BooksStore.bookDirectory(book.id)
+                .appendingPathComponent("original.pdf").path
+            let extraction = Task.detached(priority: .userInitiated) {
+                PdfTextLinux.text(
+                    pages: chapter.startPage + 1,
+                    to: chapter.endPage + 1,
+                    pdfPath: pdfPath
+                )
+            }
+            loadFailed = false
+            Task {
+                let result = await extraction.value
+                guard chapterIndex == index else { return }
+                chapterText = result
+                loadFailed = result == nil
+            }
         case .audio:
             chapterText = nil
         }
