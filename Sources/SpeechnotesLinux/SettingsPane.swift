@@ -77,11 +77,14 @@ struct SettingsPane: View {
 
                 header("Models")
                 section {
+                    // One snapshot per process instead of a filesystem sweep
+                    // per row per render — see ModelState for why.
+                    let models = ModelState.current()
                     modelRow(
                         key: "piper",
                         title: "Piper voice",
-                        subtitle: "\(PiperModelManager.curatedVoice), ~63 MB",
-                        installed: !PiperModelManager.installedVoices().isEmpty
+                        subtitle: models.piper.subtitle,
+                        installed: models.piper.installed
                     ) {
                         Task { await download("piper", "Piper") {
                             _ = try await PiperModelManager.download()
@@ -90,8 +93,8 @@ struct SettingsPane: View {
                     modelRow(
                         key: "kokoro",
                         title: "Kokoro",
-                        subtitle: "82M uint8 tier, ~190 MB",
-                        installed: KokoroModelManager.modelFilesAreValid()
+                        subtitle: models.kokoro.subtitle,
+                        installed: models.kokoro.installed
                     ) {
                         Task { await download("kokoro", "Kokoro") {
                             try await KokoroModelManager.download()
@@ -100,8 +103,8 @@ struct SettingsPane: View {
                     modelRow(
                         key: "supertonic",
                         title: "Supertonic",
-                        subtitle: "full set, ~260 MB",
-                        installed: !SupertonicModelManager.installedVoices().isEmpty
+                        subtitle: models.supertonic.subtitle,
+                        installed: models.supertonic.installed
                     ) {
                         Task { await download("supertonic", "Supertonic") {
                             try await SupertonicModelManager.download()
@@ -143,6 +146,12 @@ struct SettingsPane: View {
                     .font(.footnote)
                     .foregroundColor(theme.text)
                     .padding(.top, 12)
+
+                // The keyboard table can only change between launches, so
+                // building it on every render of the settings pane is waste.
+                // It lives on the Shortcuts pane anyway.
+                Toggle("Show keyboard shortcuts", isOn: KeyboardHelp.visibleBinding)
+                    .toggleStyle(.switch)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -352,7 +361,7 @@ struct SettingsPane: View {
     private func download(_ key: String, _ label: String, _ body: @escaping () async throws -> Void) async {
         do {
             try await body()
-            VoiceCatalog.invalidateCache()
+            ModelState.invalidate()
             modelStatus[key] = "installed ✓"
         } catch {
             modelStatus[key] = "\(label) download failed: \(error)"

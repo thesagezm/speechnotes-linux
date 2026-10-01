@@ -11,20 +11,36 @@ enum RenderProbe {
         ProcessInfo.processInfo.environment["SPEECHNOTES_BENCH"] != nil
 
     nonisolated(unsafe) static var evalCount = 0
+    /// SPEECHNOTES_BENCH=2 logs every evaluation, gaps included.
+    nonisolated(unsafe) static let verbose =
+        ProcessInfo.processInfo.environment["SPEECHNOTES_BENCH"] == "2"
     private nonisolated(unsafe) static var lastSlowLog: DispatchTime?
+    @MainActor private static var lastEval: DispatchTime?
 
     /// Called at the end of every AppShell body evaluation.
     @MainActor
     static func recordBodyEval(pane: String, durationMs: Double) {
         evalCount += 1
-        guard durationMs > 80 else { return }
         let now = DispatchTime.now()
-        if let last = lastSlowLog,
+        // The gap to the previous evaluation: how long the framework spent
+        // between handing us a state change and asking for the next body.
+        // A click's true latency is this gap plus our own body time, and the
+        // gap is the part nobody was measuring.
+        let sinceLast = lastEval.map {
+            Double(now.uptimeNanoseconds - $0.uptimeNanoseconds) / 1e6
+        } ?? 0
+        lastEval = now
+        guard verbose || durationMs > 80 || (sinceLast > 80) else { return }
+        if !verbose,
+           let last = lastSlowLog,
            now.uptimeNanoseconds - last.uptimeNanoseconds < 2_000_000_000 {
             return
         }
         lastSlowLog = now
-        Log.info(String(format: "RENDER: body #%d (%@) took %.0fms", evalCount, pane, durationMs))
+        Log.info(String(
+            format: "RENDER: body #%d (%@) self %.1fms, since previous %.1fms",
+            evalCount, pane, durationMs, sinceLast
+        ))
     }
 
     /// Wait until the render pass triggered by a state change has settled:

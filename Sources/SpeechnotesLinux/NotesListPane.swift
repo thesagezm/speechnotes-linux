@@ -42,6 +42,12 @@ struct NotesListPane: View {
                 Button("＋ New note") { createNote() }
                     .buttonStyle(.bordered)
             }
+            if KeyboardHelp.hintsVisible {
+                Text(KeyboardHelp.hintLine)
+                    .font(.caption2)
+                    .foregroundColor(theme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if filtered.isEmpty {
                 ContentUnavailableView {
                     Text("No notes")
