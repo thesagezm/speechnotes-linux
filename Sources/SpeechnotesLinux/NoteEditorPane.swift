@@ -13,10 +13,19 @@ import Appearance
 struct NoteEditorPane: View {
     let note: Note
     let notes: NotesStore
+    /// Bumped by the Ctrl+Shift+Enter shortcut. The pane renders the WAV
+    /// itself, so the request arrives as a counter rather than a callback:
+    /// a closure held in @State would be re-created every render and the
+    /// "did it change" test would always fire.
+    var wavRenderRequest: Int = 0
 
     @State private var tts = TTSController.shared
     @State private var prefs = Prefs.shared
     @State private var theme = ThemeController.shared
+    @State private var exportStatus: String?
+    /// The request counter value the current run started for, so a stale
+    /// re-render cannot restart a render that already finished.
+    @State private var lastHandledRenderRequest = -1
 
     var body: some View {
         VStack(spacing: 8) {
@@ -63,11 +72,8 @@ struct NoteEditorPane: View {
                     notes.delete(noteId: note.id)
                 }
                 .buttonStyle(.borderless)
-                Button("⤓ WAV") {
-                    exportStatus = "rendering…"
-                    Task { await renderWav() }
-                }
-                .buttonStyle(.borderless)
+                Button("⤓ WAV") { renderNow() }
+                    .buttonStyle(.borderless)
                 Spacer()
             }
             if let status = exportStatus {
@@ -92,6 +98,14 @@ struct NoteEditorPane: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .task(id: note.id) {
+            // The note the pane was built for changed under us (the user
+            // picked another note); the next render hands over a new pane.
+            guard lastHandledRenderRequest != wavRenderRequest else { return }
+            lastHandledRenderRequest = wavRenderRequest
+            guard wavRenderRequest > 0 else { return }
+            await renderWav()
+        }
     }
 
     private var editorFontSize: Double {
@@ -112,7 +126,12 @@ struct NoteEditorPane: View {
         return parts.joined(separator: " · ")
     }
 
-    @State private var exportStatus: String?
+    /// The button and the Ctrl+Shift+Enter shortcut land here, so they can
+    /// never diverge.
+    private func renderNow() {
+        exportStatus = "rendering…"
+        Task { await renderWav() }
+    }
 
     /// Renders the whole note to one WAV under Exports/ — chunk → synthesize
     /// → concatenate, mirroring the iOS renderWAV flow. Soft-fails like the

@@ -17,10 +17,21 @@ enum WindowLifecycle {
 
     /// Attaches to the native window backing this view (called once the
     /// window exists, so the application is registered and is the default).
+    ///
+    /// `.onCreate` fires on the node's first layout — NOT once per window —
+    /// which matters: `.afterUpdate` re-fires on every window update and
+    /// re-ran the whole hand-off wiring (including a second key controller)
+    /// each time.
     static func attach<V: View>(_ view: V) -> some View {
         view.inspectWindow { window in
-            state.store(UnsafeMutableRawPointer(window.widgetPointer)
-                .assumingMemoryBound(to: GtkWidget.self))
+            // `inspectWindow` has no inspection-point parameter and runs its
+            // action from `onCommit`, so it re-fires on EVERY window update.
+            // Guarding on the window pointer is what makes this idempotent:
+            // without it every repaint re-ran the wiring and installed
+            // another key controller.
+            let pointer = UnsafeMutableRawPointer(window.widgetPointer)
+                .assumingMemoryBound(to: GtkWidget.self)
+            guard state.store(pointer) else { return }
 
             window.onCloseRequest = { _ in
                 if let app = g_application_get_default() {
@@ -31,6 +42,7 @@ enum WindowLifecycle {
             if let app = g_application_get_default() {
                 connectHandOff(app: UnsafeMutableRawPointer(app))
             }
+            ShortcutHub.shared.attach(to: window)
         }
     }
 
@@ -70,15 +82,22 @@ enum WindowLifecycle {
         WindowLifecycle.state.present()
     }
 
-    /// The window widget, guarded for access from plain C signal handlers.
+    /// The window widget, guarded for access from plain C signal handlers
+    /// and idempotent so repeated wiring cannot stack up.
     private final class WidgetSlot: @unchecked Sendable {
         private let lock = NSLock()
         private var widget: UnsafeMutablePointer<GtkWidget>?
 
-        func store(_ pointer: UnsafeMutablePointer<GtkWidget>) {
+        /// Stores the pointer; returns true the first time it is seen and
+        /// false for every repeat, which is the caller's cue that the wiring
+        /// has already been done for this window.
+        @discardableResult
+        func store(_ pointer: UnsafeMutablePointer<GtkWidget>) -> Bool {
             lock.lock()
+            defer { lock.unlock() }
+            if widget == pointer { return false }
             widget = pointer
-            lock.unlock()
+            return true
         }
 
         func present() {

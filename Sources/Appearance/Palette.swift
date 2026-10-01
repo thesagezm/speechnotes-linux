@@ -199,6 +199,13 @@ public enum Palette {
                 color: @window_fg_color;
             }
 
+            /* SCU's Text widgets are GtkLabels; their ink must follow THIS
+               palette, not whatever scheme the GTK theme reports to the
+               framework — the "white text on white background" failure. */
+            label {
+                color: @window_fg_color;
+            }
+
             textview, textview text {
                 background-color: @view_bg_color;
                 color: @view_fg_color;

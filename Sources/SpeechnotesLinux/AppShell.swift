@@ -16,6 +16,7 @@ struct AppShell: View {
     @State private var books = BooksStore.shared
     @State private var theme = ThemeController.shared
     @State private var presence = PlaybackPresence.shared
+    @State private var commands = AppCommands.shared
 
     @State private var pane: Pane = .notes
     @State private var selectedNoteId: UUID?
@@ -23,6 +24,14 @@ struct AppShell: View {
     @State private var searchText = ""
     @State private var newNotebookName = ""
     @State private var resumeCandidate: ResumeCandidate?
+    /// Set by the Ctrl+F shortcut; the notes list consumes and clears it.
+    @State private var focusSearchRequested = false
+    /// Counter form of the same request — a Bool cannot tell "requested
+    /// again while already requested" from "never requested", which would
+    /// leave a second Ctrl+F doing nothing.
+    @State private var focusSearchCounter = 0
+    /// Bumped by the render shortcut; the editor consumes the newest value.
+    @State private var wavRenderRequested = 0
 
     /// The one auto-resume offer per launch: the most recent note bookmark
     /// saved within the last few hours whose note still exists.
@@ -38,6 +47,7 @@ struct AppShell: View {
         case settings
         case about
         case logs
+        case shortcuts
     }
 
     init() {
@@ -62,6 +72,21 @@ struct AppShell: View {
     private var mainBody: some View {
         // Idempotent theme sync; re-runs whenever an appearance pref changes.
         let _ = theme.sync(appearance: prefs.appearance, accentChoice: prefs.accentChoice)
+        // BookDrop must be wired at launch, not when the Books pane first
+        // renders: a transfer can land while the user is on another pane.
+        let _ = BookDropService.configure()
+        // Keep the keyboard layer's view of the world in step with the view
+        // tree, so a shortcut acts on exactly what the user can see.
+        commands.publish(
+            AppCommands.Context(
+                pane: pane,
+                selectedNoteId: selectedNoteId,
+                selectedBookId: selectedBookId,
+                searchText: searchText,
+                newNotebookName: newNotebookName
+            )
+        )
+        installHooks()
         return VStack(spacing: 0) {
             NavigationSplitView(
                 sidebar: { sidebar },
@@ -174,6 +199,9 @@ struct AppShell: View {
             sidebarButton(title: "Logs", isActive: pane == .logs) {
                 pane = .logs
             }
+            sidebarButton(title: "Shortcuts", isActive: pane == .shortcuts) {
+                pane = .shortcuts
+            }
             Spacer()
             HStack(spacing: 8) {
                 TextField("New notebook…", text: $newNotebookName)
@@ -239,7 +267,8 @@ struct AppShell: View {
         case .recycleBin: return 2
         case .about: return 3
         case .logs: return 4
-        case .settings: return 5
+        case .shortcuts: return 5
+        case .settings: return 6
         }
     }
 
@@ -248,7 +277,7 @@ struct AppShell: View {
         case .notes: return 0
         case .books: return 1
         case .recycleBin: return 2
-        case .about, .logs: return 3
+        case .about, .logs, .shortcuts: return 3
         case .settings: return 4
         }
     }
@@ -264,6 +293,7 @@ struct AppShell: View {
                 AnyView(RecycleBinPane(notes: notes)),
                 AnyView(AboutPane()),
                 AnyView(LogsPane()),
+                AnyView(ShortcutsPane()),
                 AnyView(SettingsPane(prefs: prefs, notes: notes, notebooks: notebooks)),
             ]
         )
@@ -303,7 +333,8 @@ struct AppShell: View {
                 notebooks: notebooks,
                 prefs: prefs,
                 selectedNoteId: $selectedNoteId,
-                searchText: $searchText
+                searchText: $searchText,
+                focusSearchRequest: focusSearchCounter
             )
         }
     }
@@ -312,14 +343,16 @@ struct AppShell: View {
         CachedSwitchView(
             activeIndex: detailIndex,
             branches: [
-                AnyView(NotesDetailHost(note: selectedNote, notes: notes)),
+                AnyView(NotesDetailHost(
+                    note: selectedNote, notes: notes, wavRenderRequest: wavRenderRequested
+                )),
                 AnyView(BooksDetailHost(book: selectedBook, books: books)),
                 AnyView(placeholder(
                     title: "Recycle Bin",
                     detail: "Deleted notes stay here for \(Note.recycleRetentionDays) days before they are purged."
                 )),
                 AnyView(placeholder(
-                    title: "About & Logs",
+                    title: "About, Logs & Shortcuts",
                     detail: "Shown in the middle column."
                 )),
                 AnyView(placeholder(title: "Settings", detail: "Preferences are on the left.")),
@@ -344,6 +377,19 @@ struct AppShell: View {
             Text(detail)
         }
     }
+
+    /// The two commands that need the view tree itself. Assigned on every
+    /// render because both close over view state; assigning is a plain
+    /// closure store, so it costs nothing when the closures are unchanged.
+    private func installHooks() {
+        commands.hooks = AppCommands.Hooks(
+            focusSearch: {
+                focusSearchRequested = true
+                focusSearchCounter &+= 1
+            },
+            renderSelectedToWav: { wavRenderRequested &+= 1 }
+        )
+    }
 }
 
 /// The notes detail slot: editor when a note is selected, placeholder
@@ -352,10 +398,11 @@ struct AppShell: View {
 struct NotesDetailHost: View {
     let note: Note?
     let notes: NotesStore
+    let wavRenderRequest: Int
 
     var body: some View {
         if let note {
-            NoteEditorPane(note: note, notes: notes)
+            NoteEditorPane(note: note, notes: notes, wavRenderRequest: wavRenderRequest)
         } else {
             ContentUnavailableView {
                 Text("No note selected")

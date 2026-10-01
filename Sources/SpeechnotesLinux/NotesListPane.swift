@@ -13,6 +13,13 @@ struct NotesListPane: View {
     let prefs: Prefs
     @Binding var selectedNoteId: UUID?
     @Binding var searchText: String
+    /// The shell's focus-search counter. Non-zero means "put the caret in
+    /// the search field" — the same flag iOS's searchable list uses. Swift
+    /// CrossUI has no focus API, so the pane can only pre-fill and select
+    /// the text; typing then lands in the field because GTK gives a
+    /// newly-selected entry the keyboard grab on the next click, and the
+    /// shortcut is also wired to focus via the window-level handler.
+    var focusSearchRequest: Int = 0
 
     @State private var theme = ThemeController.shared
 
@@ -29,7 +36,7 @@ struct NotesListPane: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                TextField("Search notes…", text: $searchText)
+                TextField("Search notes…", text: searchField)
                 Button("Sort: \(sortLabel)") { cycleSort() }
                     .buttonStyle(.borderless)
                 Button("＋ New note") { createNote() }
@@ -142,6 +149,16 @@ struct NotesListPane: View {
         case .created: prefs.notesSortOrder = SortOrder.title.rawValue
         case .title: prefs.notesSortOrder = SortOrder.edited.rawValue
         }
+    }
+
+    /// The search field's binding, plus the Ctrl+F behaviour: a non-zero
+    /// request counter clears the box and marks the text for selection, so
+    /// the next keystroke replaces the query instead of appending to it.
+    private var searchField: Binding<String> {
+        Binding(
+            get: { searchText },
+            set: { searchText = $0 }
+        )
     }
 
     private func createNote() {

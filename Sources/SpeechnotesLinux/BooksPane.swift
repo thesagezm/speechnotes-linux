@@ -2,6 +2,8 @@ import Foundation
 import SwiftCrossUI
 import Data
 import TTSEngine
+import BookDrop
+import SpeechLogic
 import Appearance
 
 /// The Books shelf: the imported books, the import buttons (GTK file
@@ -15,6 +17,7 @@ struct BooksPane: View {
     @Environment(\.chooseFile) private var chooseFile
     @State private var tts = TTSController.shared
     @State private var theme = ThemeController.shared
+    @State private var bookDrop = LocalSendReceiver.shared
 
     init(books: BooksStore, onSelect: @escaping (Book) -> Void) {
         self.books = books
@@ -39,6 +42,25 @@ struct BooksPane: View {
                     Task { await importBook() }
                 }
                 .buttonStyle(.bordered)
+            }
+            HStack(spacing: 10) {
+                Toggle("BookDrop (receive books from the local network)", isOn: bookDropBinding)
+                    .toggleStyle(.switch)
+                if bookDrop.isRunning {
+                    Text("listening on port \(bookDrop.port)")
+                        .font(.footnote)
+                        .foregroundColor(theme.text)
+                }
+                if let error = bookDrop.lastError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundColor(.orange)
+                }
+                if let last = bookDrop.history.first {
+                    Text(last.name + ": " + BookDropService.outcomeLabel(last.outcome))
+                        .font(.footnote)
+                        .foregroundColor(theme.text)
+                }
             }
             if let error = books.importError {
                 Text("Import failed: \(error)")
@@ -97,6 +119,13 @@ struct BooksPane: View {
             }
             .padding(.bottom, 4)
         }
+    }
+
+    private var bookDropBinding: Binding<Bool> {
+        Binding(
+            get: { BookDropService.isEnabled },
+            set: { BookDropService.setEnabled($0) }
+        )
     }
 
     private func importBook() async {

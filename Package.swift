@@ -73,6 +73,16 @@ let package = Package(
         ),
         // Shared leveled logger.
         .target(
+            name: "BookDrop",
+            dependencies: ["Log", .product(name: "SwiftCrossUI", package: "swift-cross-ui")]
+        ),
+        // The keyboard binding table and keysym matcher. Pure Swift with no
+        // framework dependencies, so the half of the keyboard layer that
+        // decides "is this keypress ours" is testable on its own.
+        .target(
+            name: "Shortcuts"
+        ),
+        .target(
             name: "Log",
             dependencies: ["AppPaths"]
         ),        // XDG paths.
@@ -123,6 +133,8 @@ let package = Package(
         .executableTarget(
             name: "SpeechnotesLinux",
             dependencies: [
+                "BookDrop",
+                "Shortcuts",
                 "SpeechLogic",
                 "Data",
                 "TTSEngine",
@@ -192,6 +204,14 @@ let package = Package(
         .testTarget(
             name: "AppearanceTests",
             dependencies: ["Appearance"]
+        ),
+        .testTarget(
+            name: "BookDropTests",
+            dependencies: ["BookDrop", "Log"]
+        ),
+        .testTarget(
+            name: "ShortcutsTests",
+            dependencies: ["Shortcuts"]
         )
     ]
 )
