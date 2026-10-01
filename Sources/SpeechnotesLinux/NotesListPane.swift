@@ -7,30 +7,69 @@ import Appearance
 /// column. Ported from speechnotes-ios NotesListView; swipe actions and the
 /// import/share dialogs are not portable to SwiftCrossUI 0.9 and land later
 /// as toolbar menus.
+///
+/// Performance note — why the result set is memoized. SwiftCrossUI lays out
+/// the whole tree on every update, and this pane lives inside the shell, so
+/// its body re-runs on every keystroke and on every playback tick. The
+/// obvious implementation re-walks the library and re-sorts it each time.
+/// That work now lives in ``NotesQuery`` (tested headlessly) and the result
+/// is cached against the store's version counter plus the three inputs that
+/// actually change it, so it is rebuilt only when one of them moves.
 struct NotesListPane: View {
     let notes: NotesStore
     let notebooks: NotebooksStore
     let prefs: Prefs
     @Binding var selectedNoteId: UUID?
     @Binding var searchText: String
-    /// The shell's focus-search counter. Non-zero means "put the caret in
-    /// the search field" — the same flag iOS's searchable list uses. Swift
-    /// CrossUI has no focus API, so the pane can only pre-fill and select
-    /// the text; typing then lands in the field because GTK gives a
-    /// newly-selected entry the keyboard grab on the next click, and the
-    /// shortcut is also wired to focus via the window-level handler.
+    /// The shell's focus-search counter, bumped by the Ctrl+F shortcut.
+    /// SwiftCrossUI has no focus API, so the pane can only clear the box;
+    /// the window-level key handler does the rest.
     var focusSearchRequest: Int = 0
 
     @State private var theme = ThemeController.shared
+    @State private var derived = Derived()
 
-    private enum SortOrder: String {
-        case edited
-        case created
-        case title
+    /// The memoized result set plus the inputs it was derived from.
+    struct Derived {
+        var rows: [Note] = []
+        private var libraryVersion = -1
+        private var scope = ""
+        private var query = ""
+        private var sort: NotesQuery.Sort?
+        private var notebookCount = -1
+
+        mutating func refresh(
+            notes: [Note],
+            scope: String,
+            query: String,
+            sort: NotesQuery.Sort,
+            libraryVersion: Int,
+            notebookCount: Int
+        ) {
+            guard rows.isEmpty
+                || libraryVersion != self.libraryVersion
+                || scope != self.scope
+                || query != self.query
+                || sort != self.sort
+                || notebookCount != self.notebookCount
+            else { return }
+            self.libraryVersion = libraryVersion
+            self.scope = scope
+            self.query = query
+            self.sort = sort
+            self.notebookCount = notebookCount
+            // A scope that is neither "all", "unfiled" nor a UUID can only
+            // come from a stale preference. Fall back to the whole library
+            // rather than an empty list the user cannot explain.
+            let (id, all) = NotesQuery.notebookId(forScope: scope) ?? (nil, true)
+            rows = NotesQuery.apply(
+                notes, notebookId: id, allNotebooks: all, query: query, sort: sort
+            )
+        }
     }
 
-    private var sortOrder: SortOrder {
-        SortOrder(rawValue: prefs.notesSortOrder) ?? .edited
+    private var sortOrder: NotesQuery.Sort {
+        NotesQuery.Sort(rawValue: prefs.notesSortOrder) ?? .edited
     }
 
     var body: some View {
@@ -48,7 +87,7 @@ struct NotesListPane: View {
                     .foregroundColor(theme.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if filtered.isEmpty {
+            if derived.rows.isEmpty {
                 ContentUnavailableView {
                     Text("No notes")
                 } description: {
@@ -58,7 +97,7 @@ struct NotesListPane: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(filtered, selection: $selectedNoteId) { note in
+                List(derived.rows, selection: $selectedNoteId) { note in
                     row(for: note)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,6 +105,24 @@ struct NotesListPane: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear(perform: refreshDerived)
+        .onChange(of: prefs.activeNotebookScope) { refreshDerived() }
+        .onChange(of: prefs.notesSortOrder) { refreshDerived() }
+        .onChange(of: searchText) { refreshDerived() }
+        // The store's version counter is the cheapest signal that a note was
+        // created, edited, pinned, starred, moved or deleted.
+        .onChange(of: notes.version) { refreshDerived() }
+    }
+
+    private func refreshDerived() {
+        derived.refresh(
+            notes: notes.notes,
+            scope: prefs.activeNotebookScope,
+            query: searchText,
+            sort: sortOrder,
+            libraryVersion: notes.version,
+            notebookCount: notebooks.notebooks.count
+        )
     }
 
     // MARK: - Row
@@ -75,11 +132,13 @@ struct NotesListPane: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(meta(for: note).title)
                     .font(.system(size: 14, weight: note.isPinned ? .medium : .regular))
+                    .lineLimit(1)
                 Text(caption(for: note))
                     .font(.footnote)
                     .foregroundColor(theme.text)
+                    .lineLimit(1)
             }
-            Spacer()
+            Spacer(minLength: 0)
             Button(note.isPinned ? "📌" : "○") {
                 notes.setPinned(!note.isPinned, noteId: note.id)
             }
@@ -98,7 +157,7 @@ struct NotesListPane: View {
         if let notebookName = notebooks.name(for: note.notebookId) {
             parts.append(notebookName)
         }
-        parts.append("\(note.wordCount) words")
+        parts.append("\(meta.wordCount) words")
         if !meta.preview.isEmpty {
             parts.append(meta.preview)
         }
@@ -107,38 +166,6 @@ struct NotesListPane: View {
 
     private func meta(for note: Note) -> NotesStore.RowMetadata {
         notes.metadata(for: note)
-    }
-
-    // MARK: - Filtering + sorting
-
-    private var scoped: [Note] {
-        switch prefs.activeNotebookScope {
-        case "all":
-            return notes.notes
-        case "unfiled":
-            return notes.notes(inNotebook: nil)
-        default:
-            return UUID(uuidString: prefs.activeNotebookScope)
-                .map { notes.notes(inNotebook: $0) } ?? notes.notes
-        }
-    }
-
-    private var filtered: [Note] {
-        var result = scoped
-        if !searchText.isEmpty {
-            result = result.filter {
-                $0.text.range(of: searchText, options: .caseInsensitive) != nil
-            }
-        }
-        result.sort { lhs, rhs in
-            if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
-            switch sortOrder {
-            case .edited: return lhs.updatedAt > rhs.updatedAt
-            case .created: return lhs.createdAt > rhs.createdAt
-            case .title: return meta(for: lhs).title.localizedCompare(meta(for: rhs).title) == .orderedAscending
-            }
-        }
-        return result
     }
 
     private var sortLabel: String {
@@ -150,16 +177,11 @@ struct NotesListPane: View {
     }
 
     private func cycleSort() {
-        switch sortOrder {
-        case .edited: prefs.notesSortOrder = SortOrder.created.rawValue
-        case .created: prefs.notesSortOrder = SortOrder.title.rawValue
-        case .title: prefs.notesSortOrder = SortOrder.edited.rawValue
-        }
+        let all = NotesQuery.Sort.allCases
+        let next = all[(all.firstIndex(of: sortOrder).map { $0 + 1 } ?? 0) % all.count]
+        prefs.notesSortOrder = next.rawValue
     }
 
-    /// The search field's binding, plus the Ctrl+F behaviour: a non-zero
-    /// request counter clears the box and marks the text for selection, so
-    /// the next keystroke replaces the query instead of appending to it.
     private var searchField: Binding<String> {
         Binding(
             get: { searchText },
