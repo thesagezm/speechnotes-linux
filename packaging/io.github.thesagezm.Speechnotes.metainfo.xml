@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.thesagezm.Speechnotes</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Speechnotes</name>
+  <summary>Notes that read themselves aloud — and a book reader with the same voice</summary>
+  <developer id="io.github.thesagezm">
+    <name>thesagezm</name>
+  </developer>
+  <description>
+    <p>
+      Speechnotes is a GTK4 notes app with a full text-to-speech stack and a
+      book reader. Write in markdown, collect EPUBs and PDFs, and listen to
+      any of it — everything runs on your machine, and your library is plain
+      JSON you own.
+    </p>
+    <ul>
+      <li>Markdown notes with notebooks, bookmarks, tags and full-text search</li>
+      <li>Read-along TTS: five engines (espeak-ng built in; Kokoro-82M,
+          nano-edge-tts, Supertonic and Phonon download on demand)</li>
+      <li>Books: EPUB as published, PDF with OCR for scans, MOBI/AZW3, FB2,
+          RTF, HTML, PowerPoint/ODP decks with a presenter window</li>
+      <li>Audiobooks: import .m4b/.opus/.mp3, export .wav</li>
+      <li>BookDrop: phone-to-desktop transfer over the LAN (LocalSend-compatible)</li>
+      <li>Pomodoro with structured plans; four appearance schemes including E-Ink</li>
+      <li>Headless CLI for scripts and servers</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.thesagezm.Speechnotes.desktop</launchable>
+  <url type="homepage">https://github.com/thesagezm/speechnotes-linux</url>
+  <url type="bugtracker">https://github.com/thesagezm/speechnotes-linux/issues</url>
+  <url type="vcs-browser">https://github.com/thesagezm/speechnotes-linux</url>
+  <categories>
+    <category>Utility</category>
+    <category>TextEditor</category>
+    <category>Audio</category>
+  </categories>
+  <keywords>
+    <keyword>notes</keyword>
+    <keyword>text</keyword>
+    <keyword>speech</keyword>
+    <keyword>tts</keyword>
+    <keyword>audiobook</keyword>
+    <keyword>epub</keyword>
+    <keyword>reader</keyword>
+  </keywords>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>speechnotes</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0-alpha.1" date="2026-11-18">
+      <description>
+        <p>First public alpha: notes, books, read-aloud speech with five
+        engines, audiobooks, BookDrop, Pomodoro.</p>
+      </description>
+    </release>
+  </releases>
+</component>

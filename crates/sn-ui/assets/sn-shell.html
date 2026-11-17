@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- CSP: everything comes from the engine's own loopback origin. The
+     shell's module is spliced INLINE into this page by the asset layer —
+     this WebKit never executes an external <script type="module" src>
+     (measured; inline modules importing the same files run fine), and a
+     CSP without 'unsafe-inline' would block the spliced module, so
+     script-src admits it. Book content stays guarded twice over: the
+     paginator renders sections into sandboxed blob: iframes, and the
+     shell strips script elements from every loaded document as well. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' blob: data:; media-src 'self' blob: data:; object-src 'none'; frame-src blob:;">
+<title>book</title>
+<style>
+  html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: #ffffff; overflow: hidden;
+  }
+  foliate-view {
+      width: 100%; height: 100%;
+  }
+  /* The shell's ground colour follows the reader's scheme so a dark theme
+     never flashes white before the book's own page paints. */
+  html.sn-dark, html.sn-dark body { background: var(--sn-bg, #1c1c1e); }
+</style>
+</head>
+<body>
+<!-- The error hook: a classic script, installed before the module — if the
+     module graph fails for any reason, the failure still reaches Rust
+     through the snbook channel instead of dying silently in a white pane.
+     Capture phase, so a resource's load error (a 404'd import) lands here
+     too. The probe reads window.__snLastError in its DOM dump. -->
+<script>
+window.__snLastError = null
+window.addEventListener('error', function (e) {
+    var message = e.message ||
+        (e.target && (e.target.src || e.target.href)) ||
+        String(e.type || 'error')
+    window.__snLastError = message
+    try {
+        window.webkit.messageHandlers.snbook.postMessage('error:' + message)
+    } catch (_) {}
+}, true)
+window.addEventListener('unhandledrejection', function (e) {
+    var reason = e.reason && e.reason.message ? e.reason.message
+        : String(e.reason === undefined ? 'rejection' : e.reason)
+    if (!window.__snLastError) window.__snLastError = reason
+    try {
+        window.webkit.messageHandlers.snbook.postMessage('error:' + reason)
+    } catch (_) {}
+})
+</script>
+<!-- sn-shell-module -->
+</body>
+</html>

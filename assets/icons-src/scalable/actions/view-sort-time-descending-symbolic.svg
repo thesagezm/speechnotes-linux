@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <!-- Symbolic glyph (2026-10-30).
+
+       Newest-first sort: rows with a downward arrow. -->
+  <path stroke="currentColor" stroke-width="1.5" fill="none" d="M6 3.5h8M6 8h5.5M6 12.5h8M3 4v8M3 4 1.5 6M3 4l1.5 2"/>
+</svg>

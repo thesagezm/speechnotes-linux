@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <!-- Symbolic glyph (2026-10-30).
+
+       A book with an arrow into it: the import-books button. -->
+  <path fill="none" stroke="currentColor" stroke-width="1.5" d="M6.5 2.5h-3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3M6.5 2.5v11M6.5 2.5 12 1.5v6"/><path stroke="currentColor" stroke-width="1.5" fill="none" d="M9.5 9.5h5M12 7.5l2.5 2-2.5 2"/>
+</svg>

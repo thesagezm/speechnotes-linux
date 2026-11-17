@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Authored for the icons.rs/build.rs contracts
+     (gresource prefix = ICON_RESOURCE_ROOT, index.theme at it);
+     (gresource prefix = ICON_RESOURCE_ROOT, index.theme at it). -->
+<gresources>
+  <gresource prefix="/io/github/thesagezm/Speechnotes/icons">
+    <file>index.theme</file>
+    <file>scalable/actions/audiobook-symbolic.svg</file>
+    <file>scalable/actions/view-preview-symbolic.svg</file>
+    <file>scalable/actions/view-contents-symbolic.svg</file>
+    <file>scalable/actions/view-sort-alphabetical-symbolic.svg</file>
+    <file>scalable/actions/format-text-heading-symbolic.svg</file>
+    <file>scalable/actions/format-text-bulleted-list-symbolic.svg</file>
+    <file>scalable/actions/format-text-quote-symbolic.svg</file>
+    <file>scalable/actions/format-text-backslash-symbolic.svg</file>
+    <file>scalable/actions/image-insert-symbolic.svg</file>
+    <file>scalable/actions/book-import-symbolic.svg</file>
+    <file>scalable/actions/pomodoro-cup-symbolic.svg</file>
+    <file>scalable/actions/pomodoro-hourglass-symbolic.svg</file>
+    <file>scalable/actions/sn-pane-hide-symbolic.svg</file>
+    <file>scalable/actions/sn-pane-show-symbolic.svg</file>
+    <file>scalable/actions/view-sort-time-ascending-symbolic.svg</file>
+    <file>scalable/actions/view-sort-time-descending-symbolic.svg</file>
+    <file>128x128/apps/speechnotes.png</file>
+    <file>256x256/apps/speechnotes.png</file>
+    <file>512x512/apps/speechnotes.png</file>
+  </gresource>
+</gresources>

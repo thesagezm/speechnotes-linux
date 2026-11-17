@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <!-- Symbolic glyph (2026-10-30); the name shipped in the gresource.
+       A left column with a chevron pushing in: the sidebar rail's "hide" face. -->
+  <rect x="1.5" y="2.5" width="6" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path stroke="currentColor" stroke-width="1.5" fill="none" d="M14.5 8h-5M12 5.5 9.5 8l2.5 2.5"/>
+</svg>

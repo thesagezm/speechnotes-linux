@@ -1,0 +1,28 @@
+[package]
+name = "sn-tts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# ortrt.rs's API shape (`Session::builder()` no-arg, `ort::value::DynValue`)
+# matches rc.13; rc.15's builder takes an Environment.
+ort = { version = "2.0.0-rc.13", features = ["load-dynamic"] }
+sn-format = { workspace = true }
+sn-media = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+unicode-normalization = "0.1"
+sha2.workspace = true
+sn-net.workspace = true
+sn-core.workspace = true
+libc = "0.2"
+# The Phonon engine (crates/sn-tts/src/phonon.rs): inference only — model
+# files come through the model manager, so the `hub` download feature stays off.
+ptts.workspace = true
+
+[dev-dependencies]

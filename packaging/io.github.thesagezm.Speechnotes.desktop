@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Speechnotes
+GenericName=Notes and text-to-speech
+Comment=Write notes, books and audiobooks, and listen to them
+Exec=speechnotes
+Icon=speechnotes
+Terminal=false
+Categories=Utility;TextEditor;AudioVideo;Audio;
+Keywords=notes;text;speech;tts;audiobook;epub;reader;
+StartupNotify=true
+StartupWMClass=Speechnotes

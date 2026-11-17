@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <!-- Symbolic glyph (2026-10-30).
+       The identical placeholder shapes were replaced with per-name symbolic
+       icons so the
+       toolbar is readable again. -->
+  <path fill="none" stroke="currentColor" stroke-width="1.5" d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2" fill="currentColor"/>
+</svg>

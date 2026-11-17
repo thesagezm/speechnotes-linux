@@ -1,0 +1,77 @@
+.TH SPEECHNOTES 1 "2026-11-18" "speechnotes 0.1.0-alpha.1" "User Commands"
+.SH NAME
+speechnotes \- notes, books and text-to-speech for Linux
+.SH SYNOPSIS
+.B speechnotes
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+.B speechnotes
+is a GTK4 notes app with a full text-to-speech stack and a book reader.
+Run without arguments it opens the graphical app. It also ships a headless
+CLI: every subcommand below works without a display, so notes, books and
+speech can be driven from scripts and servers.
+.SH OPTIONS
+.TP
+.BR \-\-selftest
+Run every core invariant (dates, chunking, stores, sanitizers) and exit
+non-zero on the first failure. The batch gate for CI.
+.TP
+.BR \-\-speak " " \fITEXT\fR
+Synthesize \fITEXT\fR through a speech engine to the default audio sink.
+Accepts
+.B \-\-engine
+(\fIespeak\fR, \fIkokoro\fR, \fInano-edge-tts\fR, \fIsupertonic\fR,
+\fIphonon\fR),
+.B \-\-voice
+and
+.BR \-\-switch " " \fIENGINE\fR
+(hot-switch the live session).
+.TP
+.BR \-\-engines
+List the available speech engines and voices, then exit.
+.TP
+.BR \-\-receive
+Serve the BookDrop receiver headless (LocalSend-compatible; LAN TCP ports
+53317\*(en53327). Landed files import into the library.
+.TP
+.BI \-\-import-book " FILE"
+Import a book (epub, pdf, mobi/azw3/pdb, fb2, rtf, html/htmlz, pptx/ppt/
+ppsx/potx, odp) into the library.
+.TP
+.BI \-\-import-note " FILE"
+Import a note from a \fI.docx\fR or \fI.jex\fR file.
+.TP
+.BI \-\-import-audiobook " FILE"
+Import an audiobook (\fI.m4b\fR, \fI.opus\fR, \fI.mp3\fR).
+.TP
+.B \-\-books
+List the library's books (id, format, title).
+.TP
+.BI \-\-open-book " ID" " [" "PAGE" "]"
+Open a book by id prefix (optionally at a page) in the GUI.
+.TP
+.BI \-\-read-book " ID"
+Extract a book's text to stdout.
+.TP
+.BI \-\-play-audiobook " ID"
+Play an imported audiobook through the library's player session.
+.TP
+.BI \-\-play-note " ID"
+Synthesize a stored note to the default audio sink.
+.TP
+.BR \-\-version ", " \-V
+Print the version and exit.
+.TP
+.BR \-\-help ", " \-h
+Print a usage summary and exit.
+.SH FILES
+.TP
+.I $XDG_DATA_HOME/speechnotes/
+notes.json, notebooks.json, bookmarks.json, Books/, models/, Exports/
+.TP
+.I $XDG_CONFIG_HOME/speechnotes/prefs.json
+App preferences.
+.SH SEE ALSO
+The project README and
+.UR https://github.com/thesagezm/speechnotes-linux
+.UE .

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <!-- Symbolic glyph (2026-10-30).
+
+       Oldest-first sort: rows with an upward arrow and a clock face. -->
+  <path stroke="currentColor" stroke-width="1.5" fill="none" d="M6 3.5h8M6 8h5.5M6 12.5h8M3 12V4M3 12l-1.5-2M3 12l1.5-2"/>
+</svg>

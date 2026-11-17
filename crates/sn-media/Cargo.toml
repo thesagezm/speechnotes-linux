@@ -1,0 +1,14 @@
+[package]
+name = "sn-media"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+alsa = "0.9"
+
+[[bin]]
+name = "alsa-tone"
+path = "src/bin/tone.rs"

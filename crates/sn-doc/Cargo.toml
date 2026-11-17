@@ -1,0 +1,38 @@
+[package]
+name = "sn-doc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+flate2 = "1.1.10"
+image = "0.25.9"
+log = { workspace = true, features = ["std"] }
+ort = { version = "2.0.0-rc.10", features = ["load-dynamic"] }
+pdfium-render = "0.9.4"
+thiserror.workspace = true
+# The slide decks: DeckCraft's clean-room ECMA-376 reader parses a .pptx (and
+# legacy .ppt) leniently into its document model, whose `resolve` module does
+# the full placeholder → layout → master → theme inheritance. We render that
+# resolved model as the deck viewer's HTML; nothing DeckCraft renders with
+# (wgpu/egui) is pulled in — the parser crate's deps are XML and zip only.
+deckcraft-pptx = { git = "https://github.com/storytold/deckcraft", rev = "a0eeb341d2790be1056e472774cb379d8bf16566" }
+# The model, geometry and colour crates the adapter resolves through — same
+# monorepo, same rev (cargo unifies the checkout).
+deckcraft-model = { git = "https://github.com/storytold/deckcraft", rev = "a0eeb341d2790be1056e472774cb379d8bf16566" }
+deckcraft-geom = { git = "https://github.com/storytold/deckcraft", rev = "a0eeb341d2790be1056e472774cb379d8bf16566" }
+deckcraft-color = { git = "https://github.com/storytold/deckcraft", rev = "a0eeb341d2790be1056e472774cb379d8bf16566" }
+
+[dev-dependencies]
+# The ocr-dump example's RUST_LOG=debug switch: the OCR tuning loop reads
+# the pipeline's own detection/recognition logs as it measures recall.
+env_logger = "0.11"
+# The fixtures' packages are built in memory; the zip writer is the crate
+# DeckCraft itself uses. Deflate only: the default feature set also drags in
+# zstd, bzip2, lzma and xz — four more decompression stacks, and the zstd
+# one carries known advisories (RUSTSEC-2026-0391 and the zstd-safe
+# use-after-free series). The fixtures are deflate archives, like every
+# .pptx DeckCraft reads.
+zip = { version = "9.1.2", default-features = false, features = ["deflate"] }

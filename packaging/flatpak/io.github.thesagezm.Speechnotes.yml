@@ -1,0 +1,120 @@
+# Flatpak manifest for Speechnotes.
+# Build: flatpak-builder --force-clean --install --user build packaging/flatpak/io.github.thesagezm.Speechnotes.yml
+# Run:   flatpak run io.github.thesagezm.Speechnotes
+#
+# Modules other than the app itself:
+#   - onnxruntime (loaded dynamically by the neural engines and RapidOCR)
+#   - pdfium (the PDF glyph source, loaded dynamically)
+#   - espeak-ng (the built-in TTS engine + phoneme extraction)
+#   - ffmpeg (audio export; also the pomodoro chime fallback)
+#   - poppler (pdftoppm page rasterization for the OCR path)
+#   - tesseract (the OCR backend option)
+#
+# The app's cargo sources come from Cargo.lock via flatpak-cargo-generator
+# (see packaging/flatpak/README.md). The deckcraft git dependency is pinned
+# by rev in Cargo.lock and included in the generated sources.
+
+app-id: io.github.thesagezm.Speechnotes
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: speechnotes
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=pulseaudio
+  - --share=network            # model downloads from HuggingFace on demand
+  - --filesystem=home          # BookDrop import target + the library
+  - --talk-name=org.freedesktop.portal.Desktop
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/pkgconfig
+  - /share/man
+  - "*.a"
+  - "*.la"
+modules:
+  - name: onnxruntime
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 lib/libonnxruntime.so %{_prefix}/lib/libonnxruntime.so
+    sources:
+      - type: archive
+        url: https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-linux-x64-1.30.0.tgz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+
+  - name: pdfium
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 lib/libpdfium.so %{_prefix}/lib/libpdfium.so
+    sources:
+      - type: archive
+        url: https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7613/pdfium-linux-x64-libc++-tgz.tgz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+
+  - name: espeak-ng
+    buildsystem: autotools
+    config-opts:
+      - --with-gradle=no
+    sources:
+      - type: archive
+        url: https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng-1.52.0.tar.gz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+
+  - name: poppler
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_GTK_TESTS=OFF
+      - -DBUILD_QT5_TESTS=OFF
+      - -DBUILD_QT6_TESTS=OFF
+      - -DENABLE_GLIB=OFF
+      - -DENABLE_CPP=OFF
+    sources:
+      - type: archive
+        url: https://poppler.freedesktop.org/poppler-25.10.0.tar.xz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+
+  - name: ffmpeg
+    config-opts:
+      - --disable-doc
+      - --disable-programs
+      - --enable-ffmpeg
+      - --enable-ffplay=no
+      - --enable-shared
+      - --disable-static
+      - --enable-gpl
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+
+  - name: tesseract
+    buildsystem: autotools
+    config-opts:
+      - --disable-openmp
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.0.tar.gz
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+
+  - name: speechnotes
+    buildsystem: simple
+    build-commands:
+      - cargo build --release --offline
+      - install -Dm755 target/release/speechnotes %{_prefix}/bin/speechnotes
+      - install -Dm644 packaging/io.github.thesagezm.Speechnotes.desktop %{_prefix}/share/applications/io.github.thesagezm.Speechnotes.desktop
+      - install -Dm644 packaging/io.github.thesagezm.Speechnotes.metainfo.xml %{_prefix}/share/metainfo/io.github.thesagezm.Speechnotes.metainfo.xml
+      - install -Dm644 packaging/man/speechnotes.1 %{_prefix}/share/man/man1/speechnotes.1
+      - for size in 128x128 256x256 512x512; do install -Dm644 assets/icons-src/$size/apps/speechnotes.png %{_prefix}/share/icons/hicolor/$size/apps/speechnotes.png; done
+      - install -Dm644 assets/icons-src/scalable/actions/*.svg -t %{_prefix}/share/icons/hicolor/scalable/actions/
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+    sources:
+      - type: dir
+        path: ../..
+      # Cargo dependencies: generated JSON, see packaging/flatpak/README.md
+      #   flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
+      - cargo-sources.json

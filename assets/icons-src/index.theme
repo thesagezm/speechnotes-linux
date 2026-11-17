@@ -1,0 +1,34 @@
+[Icon Theme]
+Name=Speechnotes
+Comment=Icons Speechnotes ships that the system themes do not have
+# Authored for the icons.rs/build.rs contracts
+# (Inherits list quoted in icons.rs's module doc).
+
+Inherits=Pop,Adwaita,hicolor
+Directories=scalable/actions,128x128/apps,256x256/apps,512x512/apps
+
+[scalable/actions]
+Context=Actions
+Size=16
+Type=Scalable
+MinSize=8
+MaxSize=512
+
+# The application icon (`speechnotes`, the rounded-corner mark the iOS and
+# Android launchers show), shipped so a window or dock can resolve it from
+# inside the binary without a system-wide install. Fixed-size PNG dirs, the
+# way hicolor declares its own.
+[128x128/apps]
+Context=Applications
+Size=128
+Type=Fixed
+
+[256x256/apps]
+Context=Applications
+Size=256
+Type=Fixed
+
+[512x512/apps]
+Context=Applications
+Size=512
+Type=Fixed

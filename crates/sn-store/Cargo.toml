@@ -1,0 +1,20 @@
+[package]
+name = "sn-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sn-core.workspace = true
+# sn-tts removed by reconciliation sweep 2026-10-29: zero `sn_tts::` uses in sn-store sources (grep-verified); the dep only dragged the still-broken sn-tts into this build.
+sn-doc.workspace = true
+sn-format.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+# sn-store's originals use the `log` macros (books.rs OCR paths); `log` is not
+# a workspace dependency yet, so it is pinned here per crate.
+#  version 0.4 derived from usage (log::info!/warn!), not from a lockfile.
+log = "0.4"

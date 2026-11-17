@@ -1,0 +1,14 @@
+[package]
+name = "sn-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sn-core.workspace = true
+# sn-tts agent 2026-10-29: added for the original wav.rs (its WavError derives
+# thiserror::Error); forced by sn-tts's espeak/kokoro engines consuming
+# sn_format::wav..
+thiserror.workspace = true
+
+comrak = "0.55.0"

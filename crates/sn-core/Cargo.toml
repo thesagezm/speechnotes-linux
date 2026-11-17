@@ -1,0 +1,18 @@
+[package]
+name = "sn-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+#  used by util::fold (Unicode normalisation for case-insensitive
+# matching); version resolved offline from the local cargo cache.
+unicode-normalization = "0.1"
+#  used by the original logging.rs (tracing_subscriber subscriber/layer/env-filter);
+# version from the local registry cache, matching the workspace tracing 0.1 line.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

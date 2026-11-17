@@ -1,0 +1,48 @@
+[package]
+name = "sn-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+sn-core.workspace = true
+sn-store.workspace = true
+sn-format.workspace = true
+sn-tts.workspace = true
+gtk4 = { version = "0.9", package = "gtk4", features = ["v4_12"] }
+tracing.workspace = true
+# The Pomodoro's structured mode resolves a finish wall-clock time ("by
+# 17:00") into the next occurrence in the machine's own zone — the same
+# clock crate sn-core's dates run on, so the two can never disagree.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+sn-doc.workspace = true
+# The note preview's remote images go through the same fetch rules the model
+# manager uses: capped, host-pinned, and sniffed before they land on disk.
+# The BookDrop receiver is sn-net's too: sn-ui runs its listener thread and
+# routes landed files into the library.
+sn-net.workspace = true
+sha2.workspace = true
+serde.workspace = true
+# The book view's JS→Rust messages (the book report, the relocations) are
+# JSON over the script-message channel; parsing them needs serde_json.
+serde_json.workspace = true
+log.workspace = true
+# Version matched to sn-doc's pin.
+image = "0.25.9"
+# The EPUB viewer: the book is shown as the book — its own XHTML in a real
+# web engine, with the publisher's stylesheet applying. `webkit6` is the
+# GTK4 line (webkitgtk-6.0); the older `webkit2gtk` crate is the GTK3 one
+# and cannot be embedded in a GTK4 window.
+webkit6 = "0.4"
+
+# The icon theme is compiled from assets/icons-src at build time; see icons.rs.
+[build-dependencies]
+glib-build-tools = "0.20"
+
+
+[dev-dependencies]
+sn-core.workspace = true
+sn-store.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,1047 @@
+/* One CSS template, parameterised by the palette. Every named colour is
+   overridden — a partial set is how the Swift port got dark panels under light
+   text in forced-light mode. */
+
+/* GTK CSS has no custom properties and no :root; the palette is substituted
+   directly by the template. */
+window {{ background-color: {window}; color: {ink}; }}
+
+listview, gridview {{ background: {window}; }}
+listview > row {{ background: transparent; }}
+
+/* Sidebar */
+.sidebar {{
+  background: {surface};
+  border-right: 1px solid {border};
+}}
+.sidebar button.flat {{
+  background: transparent;
+  border-radius: 8px;
+  padding: 7px 12px;
+}}
+.sidebar button.flat:hover {{ background: {hover}; }}
+.sidebar button.flat.active {{
+  background: {selected};
+  font-weight: 600;
+  /* The accent, used with intent: the section you are in carries an accent
+     edge, so the eye finds it without a label having to shout. */
+  box-shadow: inset 3px 0 0 {a};
+}}
+/* The active row's label needs its colour pinned — without it the
+   selected row renders as a blank highlighted strip (the same defect the
+   toc-menu rule below already solves; measured on the built app
+   2026-10-30: main sidebar + settings nav both). */
+.sidebar button.flat.active label {{ color: {ink}; }}
+/* The sidebar's labels ellipsize: a long notebook name must not pin the
+   column's minimum width — the pane has to be able to shrink cleanly.
+   (GTK's CSS has no `ellipsize` property; the label sets it in Rust.) */
+
+/* Notes list */
+.notes-list {{ background: {window}; }}
+.notes-list > row {{
+  background: transparent;
+  border-radius: 10px;
+  padding: 8px 10px 8px 6px;
+  margin: 1px 6px;
+}}
+.notes-list > row:hover {{ background: {hover}; }}
+.notes-list > row:selected {{ background: {selected}; box-shadow: none; }}
+.notes-list > row:selected .row-title {{ color: {ink}; }}
+/* The selected note carries an accent edge — the accent used with intent,
+   one place, not everywhere. */
+.notes-list > row:selected {{
+  box-shadow: inset 3px 0 0 {a};
+}}
+
+.row-title {{ font-weight: 600; font-size: 0.95rem; color: {ink}; }}
+.row-preview {{ color: {ink_dim}; font-size: 0.82rem; }}
+.row-meta {{ color: {ink_dim}; font-size: 0.75rem; }}
+.section-label {{
+  color: {ink_dim};
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 10px 14px 2px;
+}}
+.sidebar-section {{
+  color: {ink_dim};
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 8px 14px 4px;
+}}
+
+/* Editor */
+textview, textview text {{
+  background: {window};
+  color: {ink};
+  caret-color: {a};
+}}
+.title-entry {{
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 6px 2px;
+  color: {ink};
+}}
+.title-entry:focus {{ outline: none; box-shadow: none; }}
+
+/* Header bar and toolbars */
+headerbar {{
+  background: {surface};
+  color: {ink};
+  border-bottom: 1px solid {border};
+}}
+headerbar button {{ background: transparent; }}
+.toolbar {{
+  background: {surface};
+  border-bottom: 1px solid {border};
+  padding: 4px 8px;
+}}
+.toolbar button.flat {{ padding: 5px 9px; border-radius: 8px; }}
+.toolbar button.flat:hover {{ background: {hover}; }}
+.toolbar button.flat.active {{ background: {selected}; }}
+
+/* The toolbar and the format bar scroll sideways when the window is
+   narrow. Their scrollbars are *overlay* scrollbars: they sit on top of
+   the row rather than taking a strip of its height, so the row's height
+   does not change when a scrollbar appears — a control that jumps down a
+   few pixels the moment the window narrows is a control that moves under
+   the reader's finger. */
+toolbar-scroll,
+format-bar-scroll {{
+  border-bottom: 1px solid {border};
+}}
+toolbar-scroll scrollbar,
+format-bar-scroll scrollbar {{
+  background: transparent;
+  border: none;
+  min-height: 3px;
+}}
+toolbar-scroll scrollbar slider,
+format-bar-scroll scrollbar slider {{
+  background: {border};
+  border-radius: 2px;
+  min-height: 3px;
+}}
+
+/* Engine/voice pickers riding inline at the end of the transport bar */
+.engine-picker {{
+  margin-left: 10px;
+}}
+.engine-picker label {{ color: {ink_dim}; }}
+.engine-picker dropdown {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 8px;
+  padding: 2px 4px;
+}}
+.engine-picker dropdown button.combo {{
+  background: none;
+  border: none;
+  padding: 3px 6px;
+}}
+
+/* Entries and search */
+entry, searchentry {{
+  background: {card};
+  color: {ink};
+  border: 1px solid {border};
+  border-radius: 9px;
+  padding: 5px 10px;
+}}
+entry:focus-within, searchentry:focus-within {{ border-color: {a}; }}
+
+/* Focus rings carry the accent: the one thing on screen that says "this is
+   where the keyboard is". */
+button:focus-visible,
+checkbutton:focus-visible,
+togglebutton:focus-visible,
+entry:focus-visible,
+textview:focus-visible {{
+  outline: 2px solid {a};
+  outline-offset: 1px;
+}}
+
+/* Checked boxes and toggles are the accent. */
+checkbutton check {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 4px;
+}}
+checkbutton:checked check {{
+  background: {a};
+  border-color: {a};
+}}
+checkbutton checkmark {{ color: #ffffff; }}
+togglebutton:checked {{
+  background: {a};
+  color: #ffffff;
+}}
+
+/* Buttons */
+button {{ border-radius: 9px; }}
+button.suggested-action {{ background: {a}; color: white; border: none; }}
+button.suggested-action:hover {{ filter: brightness(1.06); }}
+button.destructive-action {{ background: #c01c28; color: white; border: none; }}
+
+/* Status strip */
+.status {{
+  color: {ink_dim};
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  border-top: 1px solid {border};
+  background: {surface};
+}}
+
+/* Empty states. Scoped to labels: GTK4 reuses `empty` as a style class on
+   a ProgressBar trough at fraction 0 (its "nothing to show yet" state), and
+   the unscoped padding used to inflate the transport bar to twice its height
+   wherever nothing was playing — notes, ebooks, every idle view. */
+label.empty {{ color: {ink_dim}; font-size: 0.95rem; padding: 40px 20px; }}
+label.empty h2 {{ color: {ink}; font-size: 1.1rem; }}
+
+scrollbar {{ background: transparent; }}
+scrollbar slider {{
+  background: rgba(128, 128, 128, 0.35);
+  border-radius: 6px;
+}}
+scrollbar slider:hover {{ background: {a}; }}
+
+/* The books shelf: covers on cards, reflowing with the pane's width. */
+.book-shelf {{
+  background: {window};
+}}
+.book-card {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 12px;
+  padding: 10px;
+  margin: 4px;
+}}
+.book-card:hover {{ background: {hover}; }}
+.book-card .book-cover {{
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}}
+.book-card .book-title {{
+  font-family: {serif};
+  font-size: 1.0rem;
+  font-weight: 600;
+  margin-top: 8px;
+}}
+.book-card .book-author {{
+  color: {ink_dim};
+  font-size: 0.85rem;
+}}
+.book-card .book-meta {{
+  color: {ink_dim};
+  font-size: 0.75rem;
+  margin-top: 4px;
+}}
+/* A book's own progress line, in the accent. */
+.book-card .book-progress {{
+  min-height: 4px;
+  margin-top: 6px;
+}}
+.book-card .book-progress trough {{ border-radius: 2px; }}
+.book-card .book-progress progress {{ border-radius: 2px; background: {a}; }}
+
+/* The display face: a serif for headings and titles. The list is the one
+   theme.rs carries — "Source Serif 4" and Georgia first, DejaVu Serif
+   (which this box has) next, and the generic `serif` so no platform is
+   left without one. */
+.md-h1, .md-h2, .title-entry, .row-title, .abook-title, .book-title {{
+  font-family: {serif};
+}}
+
+/* --- Progress bars ------------------------------------------------------
+   The accent, used with intent: the fill is the accent, it is rounded, and
+   while the voice is moving it the fill carries a soft glow. The glow is a
+   CSS animation on a 6 px bar — the cheapest loop the app has, and the only
+   one that runs while something is playing. The `live` class is added and
+   removed by the ticks that already drive the fraction, so no new timer
+   exists to switch it on. */
+progressbar {{
+  min-height: 6px;
+  border-radius: 3px;
+  /* The transport bar's progress bar is the row's elastic element: it takes
+     the room that is left over and gives it back when there is not enough.
+     Without this, the bar's *content* minimum (152 px) was the app's
+     minimum window width — the window refused to go below 693 px and the
+     layout overflowed to the right instead of compressing. */
+  min-width: 40px;
+}}
+progressbar trough {{
+  background: {surface};
+  border-radius: 3px;
+  border: none;
+}}
+progressbar progress {{
+  background: {a};
+  border-radius: 3px;
+  min-height: 6px;
+}}
+progressbar.live progress {{
+  background: linear-gradient(90deg, {a}, rgba(255, 255, 255, 0.35));
+  animation: sn-bar-glow 1.8s ease-in-out infinite;
+}}
+progressbar.scrubbing progress {{
+  animation-duration: 0.6s;
+  filter: brightness(1.15);
+}}
+/* The PDF reader's page-progress strip. It sits under the reader's
+   controls, so it has no trough of its own to speak of — the strip *is*
+   the bar, and it is flush with the window's edges. */
+.pdf-page-bar {{
+  min-height: 4px;
+  border-radius: 0;
+}}
+.pdf-page-bar trough {{
+  background: {surface};
+  border-radius: 0;
+}}
+.pdf-page-bar progress {{
+  min-height: 4px;
+  border-radius: 0;
+}}
+/* GTK's CSS keyframes take `from`/`to`, not percentages — a `0%, 100%`
+   selector is a parse error that takes the whole stylesheet down with it. */
+@keyframes sn-bar-glow {{
+  from {{ box-shadow: 0 0 0 rgba(0, 0, 0, 0); }}
+  to {{ box-shadow: 0 0 8px 1px {a}; }}
+}}
+
+/* --- Rendered markdown ----------------------------------------------------
+   A table is a grid of bordered cells with a bold header row. The borders are
+   drawn on the right and bottom of every cell with zero spacing between them,
+   plus a top edge on row 0 and a left edge on column 0 — one pixel between
+   neighbours. Per-cell borders on all four sides would double every interior
+   line, which is the look the iOS renderer ended up with. */
+.markdown-body {{ padding: 4px 2px 28px 2px; }}
+
+/* A note's paragraphs. The line height and the space between them come from
+   prefs (the Reading section of the settings dialog): theme.rs fills these
+   placeholders from `noteLineHeight` and `noteParagraphSpacing`. The
+   container's own `spacing(10)` used to be the only thing separating a note's
+   paragraphs, which is why a long note read as a wall of lines — a table
+   cell, which has padding and borders of its own, looked better by accident
+   rather than by design. */
+.md-p {{
+  /* The preview's own text size, from `readerTextScale`: one multiplier
+     carried through every md- rule, so the whole rendered note scales as
+     one thing. At 1.0 this is exactly the inherited size the rule used to
+     leave alone. */
+  font-size: {md_body}em;
+  line-height: {note_line_height};
+  margin-bottom: {note_gap}px;
+}}
+
+.md-h1 {{ font-size: {md_h1}em; font-weight: 700; color: {ink}; }}
+.md-h2 {{ font-size: {md_h2}em; font-weight: 700; color: {ink}; }}
+.md-h3 {{ font-size: {md_h3}em; font-weight: 600; color: {ink}; }}
+.md-h4 {{ font-size: {md_h4}em; font-weight: 600; color: {ink}; }}
+
+.md-marker {{ color: {ink_dim}; min-width: 18px; }}
+.md-done {{ color: {ink_dim}; text-decoration: line-through; }}
+.md-check {{ margin-top: 2px; }}
+
+.md-quote {{
+  border-left: 3px solid {a};
+  padding-left: 12px;
+  color: {ink_dim};
+}}
+
+.md-code {{
+  font-family: monospace;
+  background: {surface};
+  color: {ink};
+  border: 1px solid {border};
+  border-radius: 8px;
+  padding: 8px 10px;
+}}
+.md-code-lang {{
+  font-size: {md_small}em;
+  color: {ink_dim};
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}}
+
+.md-rule {{ border-top: 1px solid {border}; min-height: 1px; }}
+.md-raw {{ color: {ink_dim}; font-family: monospace; font-size: {md_raw}em; }}
+
+.md-cell {{
+  /* The card colour goes on the CELLS, not the grid. On the grid it painted
+     the full width the grid was given, so a table whose columns only fill
+     half of that width grew a blank panel off its right-hand side that read
+     as part of the table. */
+  background: {card};
+  border-right: 1px solid {border};
+  border-bottom: 1px solid {border};
+  padding: 6px 10px;
+  min-width: 40px;
+  color: {ink};
+}}
+.md-cell-head {{
+  font-weight: 700;
+  background: {surface};
+}}
+
+.md-image {{ border-radius: 8px; }}
+.md-image-missing {{
+  color: {ink_dim};
+  font-size: 0.82rem;
+  padding: 10px;
+  border: 1px dashed {border};
+  border-radius: 8px;
+}}
+/* A remote image still downloading: Android reserves a full-width 96dp
+   spinner box, iOS a centred progress view. Full width matters — the
+   picture that replaces it is full width too, so the note does not jump. */
+.md-image-loading {{
+  min-height: 72px;
+  background: {surface};
+  color: {ink_dim};
+  font-size: 0.85rem;
+  border-radius: 8px;
+}}
+
+/* The zoom viewer a click on a note image opens. Dark in both schemes, the
+   way both phone apps' scrim is: the picture is the content, and a light
+   chrome around it would glow in a dark room. */
+.image-viewer {{ background: #16161a; }}
+.image-viewer-bar {{ padding: 6px 10px; }}
+.image-viewer-bar button {{
+  background: rgba(255,255,255,0.10);
+  color: #f6f5f4;
+  padding: 4px 12px;
+  border-radius: 6px;
+}}
+
+/* Footnotes: small, dim, under a hairline — the foot of a document. */
+.md-footnote {{
+  color: {ink_dim};
+  font-size: 0.85rem;
+  border-top: 1px solid {border};
+  padding-top: 6px;
+}}
+.md-footnote-label {{ font-weight: 600; }}
+
+/* Description lists: the term carries the weight, details hang under it. */
+.md-def-term {{ font-weight: 700; color: {ink}; }}
+
+/* GitHub alerts. Each kind keeps GitHub's edge colour, which are also this
+   app's accent hexes, so the palette stays coherent. */
+.md-alert {{
+  border-left: 3px solid {a};
+  background: {surface};
+  border-radius: 6px;
+  padding: 8px 12px;
+}}
+.md-alert-title {{ font-weight: 700; color: {ink}; }}
+.md-alert-note {{ border-left-color: #3584e4; }}
+.md-alert-tip {{ border-left-color: #2ec27e; }}
+.md-alert-important {{ border-left-color: #9141ac; }}
+.md-alert-warning {{ border-left-color: #e5a50a; }}
+.md-alert-caution {{ border-left-color: #e62d42; }}
+
+/* Formatting bar: a compact strip under the note toolbar, hidden entirely in
+   the rendered preview where there is no caret to act on. */
+.format-bar {{
+  background: {surface};
+  border-bottom: 1px solid {border};
+  padding: 3px 8px;
+}}
+.format-bar button.flat {{
+  padding: 4px 7px;
+  border-radius: 7px;
+  color: {ink_dim};
+}}
+.format-bar button.flat:hover {{ background: {hover}; color: {ink}; }}
+
+/* Slash menu. A popover is its own surface, so it needs an explicit
+   background and border or it reads as a hole in the editor. */
+popover > contents.slash-menu,
+.slash-menu {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 10px;
+  padding: 4px;
+  min-width: 220px;
+}}
+.slash-menu > row {{
+  border-radius: 7px;
+  padding: 6px 10px;
+  background: transparent;
+}}
+.slash-menu > row:hover {{ background: {hover}; }}
+.slash-menu > row:selected {{ background: {selected}; }}
+.slash-label {{ color: {ink}; font-size: 0.92rem; }}
+.slash-hint {{ color: {ink_dim}; font-size: 0.78rem; font-family: monospace; }}
+
+/* Contents popover. A popover is its own surface, so it needs an explicit
+   background and border or it reads as a hole in the window. */
+popover > contents.toc-menu,
+.toc-menu {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 10px;
+  padding: 4px;
+}}
+.toc-menu > row {{
+  border-radius: 7px;
+  padding: 6px 10px;
+  background: transparent;
+}}
+.toc-menu > row:hover {{ background: {hover}; }}
+/* The chapter now playing. `active` is not a GTK state for a row, so the
+   class has to be styled by hand or the marker is invisible. */
+.toc-menu > row.active {{ background: {selected}; }}
+.toc-menu > row.active label {{ color: {ink}; font-weight: 600; }}
+
+/* Book reader. The book itself is a web engine showing the publisher's own
+   pages (see epubview.rs), so these rules are the *read-along text view* —
+   the parsed chapter the voice reads, not the book on screen. The reader's
+   own line height and paragraph gap prefs fill these placeholders, so a
+   change shows on the next rebuild rather than needing a restart. The
+   structure rules that drew a chapter as a document of labels are gone: a
+   heading in the read-along view is a line of text like any other, because
+   the book's own headings are the publisher's. */
+.reader-paragraph {{
+  font-size: 1.05rem;
+  line-height: {reader_line_height};
+  margin-top: 0;
+  margin-bottom: {reader_gap}px;
+}}
+.book-cover-placeholder {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 6px;
+}}
+picture {{
+  border-radius: 6px;
+}}
+
+/* --- PDF pages -----------------------------------------------------------
+   A PDF is drawn, not typeset: the page is an image with a border and a
+   shadow, centred in the pane, with a gap between pages the way a reader
+   expects. The page's own size comes from its /MediaBox, so nothing here
+   sets a width or a height. */
+.pdf-page {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}}
+.pdf-page picture {{
+  border-radius: 3px;
+}}
+/* The PDF's extracted text, shown when the reader asks for the words rather
+   than the page. */
+.pdf-text {{
+  font-size: 1.05rem;
+  line-height: {reader_line_height};
+}}
+.pdf-tools button.flat {{
+  padding: 5px 8px;
+  border-radius: 8px;
+}}
+
+/* --- Audiobook display ----------------------------------------------------
+   The book page under the reader's toolbar: a cover, the title and author,
+   the chapter now playing, and its own transport — the iOS app's shape. The
+   transport bar at the window's foot stays for the global controls; this is
+   what the listener actually looks at. */
+.abook-cover {{
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}}
+picture.abook-cover {{
+  min-height: 220px;
+}}
+.book-cover-placeholder.abook-cover {{
+  margin-top: 12px;
+}}
+.abook-title {{
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 18px;
+}}
+.abook-author {{
+  color: {ink_dim};
+  font-size: 1.0rem;
+}}
+.abook-chapter {{
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 14px;
+}}
+.abook-position {{
+  color: {ink_dim};
+  font-size: 0.95rem;
+  margin-top: 4px;
+}}
+/* The two audiobook sliders — the book page's chapter fill and the
+   transport bar's whole-book fill. Both are GtkScales now: a handle the
+   listener can see and grab, where the progress bars they replaced were
+   lines the time label floated above. The selectors are scoped to the two
+   classes so no other scale in the app inherits this shape. */
+.abook-chapter-bar {{
+  margin-top: 12px;
+  margin-left: 40px;
+  margin-right: 40px;
+}}
+.abook-chapter-bar trough,
+.transport-progress trough {{
+  background: {surface};
+  border: 1px solid {border};
+  border-radius: 4px;
+  min-height: 7px;
+}}
+.abook-chapter-bar highlight,
+.transport-progress highlight {{
+  background: {a};
+  border-radius: 4px;
+  min-height: 7px;
+}}
+.abook-chapter-bar slider,
+.transport-progress slider {{
+  background: {a};
+  border: 2px solid {window};
+  border-radius: 12px;
+  min-width: 16px;
+  min-height: 16px;
+  /* The handle is taller than the trough it rides: the negative margins
+     lift it out of the trough's box the way the system theme's does. */
+  margin: -5px 0;
+}}
+.abook-chapter-bar.live highlight,
+.transport-progress.live highlight {{
+  background: linear-gradient(90deg, {a}, rgba(255, 255, 255, 0.35));
+  animation: sn-bar-glow 1.8s ease-in-out infinite;
+}}
+.abook-chapter-bar.scrubbing highlight,
+.transport-progress.scrubbing highlight {{
+  animation-duration: 0.6s;
+  filter: brightness(1.15);
+}}
+.abook-controls {{
+  margin-top: 18px;
+}}
+.abook-button {{
+  min-width: 46px;
+  min-height: 46px;
+  border-radius: 23px;
+  background: {card};
+  border: 1px solid {border};
+}}
+.abook-button:hover {{ background: {hover}; }}
+.abook-button:active {{ background: {selected}; }}
+/* The play/pause button is the page's primary action: bigger and
+   accent-filled, the way the iOS transport's own play button is. */
+.abook-play {{
+  min-width: 60px;
+  min-height: 60px;
+  border-radius: 30px;
+  background: {a};
+  border: none;
+}}
+.abook-play image {{ color: white; }}
+.abook-play:hover {{ filter: brightness(1.06); }}
+
+/* Settings pane */
+.settings-nav {{
+  background: {surface};
+  border-right: 1px solid {border};
+}}
+.settings-nav button.flat {{
+  background: transparent;
+  border-radius: 8px;
+  padding: 8px 12px;
+}}
+.settings-nav button.flat:hover {{ background: {hover}; }}
+.settings-nav button.flat.active {{
+  background: {selected};
+  font-weight: 600;
+}}
+.settings-nav button.flat.active label {{ color: {ink}; }}
+.settings-section {{
+  font-weight: 700;
+  font-size: 12px;
+  opacity: 0.72;
+  margin-top: 8px;
+}}
+.accent-swatch {{
+  border-radius: 8px;
+  border: 2px solid {border};
+  padding: 0px;
+  min-width: 36px;
+  min-height: 28px;
+}}
+.accent-swatch:checked {{
+  border: 2px solid {ink};
+}}
+
+/* The Pomodoro card: the sidebar's one tool. Small, carded, quiet — the
+   clock is the loudest thing on it, and it never grows past its rows.
+   The running view is the iOS shape: one rounded plate whose fill grows
+   with the phase, the clock and the phase pill centred ON that fill (not
+   beside it), the caption under it, and a row of round controls. */
+.pomodoro-card {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 12px;
+  padding: 8px 10px 7px;
+}}
+.pomodoro-title {{
+  font-weight: 700;
+  font-size: 0.88rem;
+}}
+.pomodoro-summary {{
+  color: {ink_dim};
+  font-size: 0.78rem;
+}}
+.pomodoro-start {{
+  font-weight: 700;
+  padding: 5px 10px;
+}}
+.pomodoro-today {{
+  color: {ink_dim};
+  font-size: 0.74rem;
+}}
+
+/* The running plate: a rounded box with the phase's fill growing from the
+   left inside it. `pomodoro-fill` is the overlay that stacks the clock
+   over the bar; the bar itself lives in `pomodoro-bar`. (GTK's CSS has no
+   `overflow`, so the fill's corners are rounded on the bar itself.) */
+.pomodoro-fill {{
+  border-radius: 10px;
+  min-height: 74px;
+}}
+.pomodoro-bar {{
+  min-height: 74px;
+}}
+.pomodoro-bar trough {{
+  background: alpha({ink}, 0.07);
+  border: none;
+  border-radius: 10px;
+  min-height: 74px;
+}}
+.pomodoro-bar progress {{
+  background: alpha({ink}, 0.16);
+  /* The fill hugs the left edge: a full radius would round it into a
+     vertical capsule at 10% progress. */
+  border-radius: 4px 0 0 4px;
+  min-height: 74px;
+}}
+/* The phase tint rides on the ProgressBar itself (the code swaps the class
+   there — CSS cannot select a parent, so a tint on the container would
+   never reach the fill). */
+.pomodoro-bar.prep progress {{ background: #ff7800; }}
+.pomodoro-bar.focus progress {{ background: #2ec27e; }}
+.pomodoro-bar.rest progress {{ background: #3584e4; }}
+.pomodoro-bar.done progress {{ background: alpha({ink}, 0.16); }}
+
+/* The clock on the plate. Big, heavy, monospaced digits — the loudest
+   thing in the sidebar, as it should be. */
+.pomodoro-time {{
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: {ink};
+}}
+.pomodoro-time.paused {{
+  color: {ink_dim};
+}}
+
+/* The phase pill: a small capsule under the clock — "Focus 2 of 4",
+   "Break 1 of 3", "Preparing". Tinted per phase. */
+.pomodoro-phase-pill {{
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 9px;
+  color: {ink_dim};
+  background: alpha({ink}, 0.08);
+}}
+.pomodoro-phase-pill.prep {{ color: #ff7800; background: rgba(255, 120, 0, 0.15); }}
+.pomodoro-phase-pill.focus {{ color: #2a9d68; background: rgba(46, 194, 126, 0.16); }}
+.pomodoro-phase-pill.rest {{ color: #3584e4; background: rgba(53, 132, 228, 0.15); }}
+.pomodoro-phase-pill.done {{ color: {ink_dim}; background: alpha({ink}, 0.08); }}
+
+.pomodoro-caption {{
+  color: {ink_dim};
+  font-size: 0.74rem;
+}}
+
+/* The controls: round buttons, the pause one filled with the phase's
+   colour so the eye lands on it first. */
+.pomodoro-controls button {{
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 15px;
+  border: 1px solid {border};
+  background: transparent;
+  color: {ink_dim};
+}}
+.pomodoro-controls button:hover {{ background: {hover}; }}
+.pomodoro-controls button.pomodoro-play {{
+  background: {a};
+  border: none;
+  color: white;
+}}
+.pomodoro-controls button.pomodoro-play:hover {{ filter: brightness(1.06); }}
+.pomodoro-controls button.pomodoro-claim {{
+  color: #2a9d68;
+  font-weight: 700;
+}}
+.pomodoro-controls button.destructive-action {{
+  background: #c01c28;
+  border: none;
+  color: white;
+}}
+.pomodoro-controls button.destructive-action:hover {{
+  filter: brightness(1.08);
+}}
+
+/* The config popover: the editor the gear opens. */
+.pomodoro-popover {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.20);
+}}
+.pomodoro-pop-title {{
+  font-weight: 700;
+  font-size: 0.9rem;
+}}
+.pomodoro-pop-section {{
+  font-weight: 700;
+  font-size: 0.76rem;
+  color: {ink_dim};
+  letter-spacing: 0.03em;
+}}
+.pomodoro-pop-footer {{
+  color: {ink_dim};
+  font-size: 0.74rem;
+}}
+.pomodoro-rule-title {{
+  font-weight: 600;
+  font-size: 0.82rem;
+}}
+.pomodoro-rule-icon {{
+  color: {ink_dim};
+}}
+/* The mode drop-down and the segmented prep picker. */
+.pomodoro-segmented {{
+  background: {surface};
+  border-radius: 9px;
+  padding: 2px;
+}}
+.pomodoro-segmented button.pomodoro-segment {{
+  border: none;
+  border-radius: 7px;
+  padding: 4px 10px;
+  background: transparent;
+  color: {ink_dim};
+  font-size: 0.8rem;
+}}
+.pomodoro-segmented button.pomodoro-segment:checked {{
+  background: {card};
+  color: {ink};
+  font-weight: 700;
+}}
+.pomodoro-segmented button.pomodoro-segment:hover {{
+  background: {hover};
+}}
+.pomodoro-start {{
+  font-weight: 700;
+  padding: 7px 12px;
+}}
+
+/* The gentle banner: a finished phase slides this down over the page. It
+   never takes the foreground, and one click retires it. */
+.gentle-banner {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 14px;
+  padding: 10px 16px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+}}
+.gentle-banner .banner-icon {{ color: {a}; }}
+.banner-title {{ font-weight: 700; font-size: 0.9rem; color: {ink}; }}
+.banner-body {{ color: {ink_dim}; font-size: 0.82rem; }}
+.banner-action {{
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 9px;
+}}
+.banner-dismiss {{
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 13px;
+}}
+.gentle-banner.prep {{ border-left: 3px solid #ff7800; }}
+.gentle-banner.focus {{ border-left: 3px solid #2ec27e; }}
+.gentle-banner.rest {{ border-left: 3px solid #3584e4; }}
+.gentle-banner.gold {{ border-left: 3px solid #e5a50a; }}
+.gentle-banner.prep .banner-icon {{ color: #ff7800; }}
+.gentle-banner.focus .banner-icon {{ color: #2ec27e; }}
+.gentle-banner.rest .banner-icon {{ color: #3584e4; }}
+.gentle-banner.gold .banner-icon {{ color: #e5a50a; }}
+
+/* The floating transport: fill-the-window's own prev/next pill. It floats
+   at the page's foot, appears on mouse motion, and leaves when the mouse
+   rests. */
+.floating-transport {{
+  background: {card};
+  border: 1px solid {border};
+  border-radius: 22px;
+  padding: 4px 10px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.22);
+}}
+.floating-transport label {{ color: {ink_dim}; }}
+
+/* The column rails (the slim chevrons that collapse/expand the sidebar and
+   the notes list). Rule added 2026-10-30 after a user report
+   "the colors of these collapse bars are not following the theme") — the
+   plain css carried no .pane-rail rule, so the rails painted with GTK's
+   default button chrome instead of the theme's palette. Flat button, theme
+   ink, themed hover — same shape as .sidebar button.flat above. */
+.pane-rail {{
+  background: none;
+  border: none;
+  color: {ink_dim};
+  padding: 10px 2px;
+  border-radius: 8px;
+}}
+.pane-rail:hover {{ background: {hover}; color: {ink}; }}
+.pane-rail:active {{ background: {selected}; }}
+
+/* --- The reader page (fixed 2026-11-02) -----------------------------------
+   The reader's box holds the keyboard focus, so the page's own key
+   controller has a chain to dispatch from (GTK4 sends a key event along
+   the focused widget's ancestors; with no focused widget no key event
+   arrives at all). The page is not a control though — it is the thing the
+   keys act on — so its focus ring stays out of sight. */
+.reader-page:focus {{ outline: none; }}
+
+/* --- Presenter window ----------------------------------------------------
+   The speaker's window a deck's Present button opens: the elapsed timer big
+   enough to read from across the room, the current slide's speaker text as
+   the page's body, the next slide's text smaller and dimmed beneath it.
+   PowerPoint's presenter view is a dark surface — the
+   speaker reads in a darkened room, so this window carries its own near-black
+   background and light text whatever the app's theme does. */
+.presenter-window {{
+  background-color: #16161c;
+}}
+.presenter-window label {{
+  color: #f2f2f7;
+}}
+.presenter-window .dim-label,
+.presenter-window .presenter-heading,
+.presenter-window .presenter-next {{
+  color: rgba(235,235,242,0.62);
+}}
+.presenter-window .presenter-heading {{
+  padding-top: 4px;
+}}
+.presenter-timer {{
+  font-size: 2.0rem;
+  font-weight: 700;
+}}
+.presenter-timer {{
+  font-size: 2.0rem;
+  font-weight: 700;
+}}
+.presenter-counter {{
+  font-size: 0.85rem;
+}}
+.presenter-heading {{
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: {ink_dim};
+  padding-top: 4px;
+}}
+.presenter-now {{
+  font-size: 1.15rem;
+  line-height: 1.5;
+  padding-right: 8px;
+}}
+.presenter-next {{
+  font-size: 0.95rem;
+  line-height: 1.4;
+  padding-right: 8px;
+}}
+/* --- The show's console (the PowerPoint-shaped one) ---------------------
+   The speaker's screen: the current slide and the next, both RENDERED —
+   each a real deck view on the deck's own engine, not parsed text — the
+   speaker's notes beneath, and the stepping controls between. The previews
+   sit in thin-edged frames so the slide's white reads against the dark
+   console, the way PowerPoint's thumbnails do. */
+.presenter-slide {{
+  background-color: #0b0b10;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 4px;
+}}
+/* The console's buttons: explicit dark chrome — the stock button on the
+   dark console rendered light-grey with labels that all but vanished
+   (measured 2026-11-12). `background` the shorthand, not `background-color`:
+   the theme's button chrome is a background IMAGE, and a color alone paints
+   under it (measured — the first fix stayed light-grey). */
+.presenter-btn {{
+  padding: 7px 20px;
+  border-radius: 8px;
+  background: #2c2c36;
+  color: #f2f2f7;
+  border: 1px solid rgba(255,255,255,0.22);
+}}
+.presenter-btn:hover {{
+  background: #3a3a46;
+}}
+.presenter-btn:active {{
+  background: #232330;
+}}
+.presenter-btn-end {{
+  margin-left: 12px;
+}}
+
+/* --- The reader's contents sidebar --------------------------------------
+   The TOC was a popover off the toolbar; now it is a column of the reader
+   page, sliding in at its left edge. Window furniture, not its own surface,
+   so no card chrome — a rule against the card colour and a hairline at the
+   page's edge read as "part of the reader". Rows are flat buttons; the open
+   chapter carries `active` the way the popover's rows did, and a group's
+   arrow leans right while its children are folded away. */
+.toc-sidebar {{
+  background: {card};
+  border-right: 1px solid {border};
+  padding: 6px 4px;
+}}
+.toc-sidebar button.toc-row,
+.toc-sidebar button.toc-group {{
+  background: transparent;
+  border-radius: 7px;
+  padding: 6px 10px;
+}}
+.toc-sidebar button.toc-row:hover,
+.toc-sidebar button.toc-group:hover {{
+  background: {hover};
+}}
+.toc-sidebar button.toc-row.active,
+.toc-sidebar button.toc-group.active {{
+  background: {selected};
+}}
+.toc-sidebar button.toc-row.active label,
+.toc-sidebar button.toc-group.active label {{
+  color: {ink};
+  font-weight: 600;
+}}
+.toc-sidebar .toc-collapsed {{
+  -gtk-icon-transform: rotate(-90deg);
+}}

@@ -1,0 +1,21 @@
+[package]
+name = "sn-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2 = "0.11.0"
+sn-core.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
+# The sender's discovery enumerates the machine's IPv4 interfaces with
+# `getifaddrs` — std has no interface listing, and guessing the LAN from
+# the default route missed the Wi-Fi whenever a VPN or a container bridge
+# owned that route.
+libc = "0.2"

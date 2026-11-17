@@ -1,0 +1,26 @@
+[package]
+name = "speechnotes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "speechnotes"
+path = "main.rs"
+
+[dependencies]
+sn-core.workspace = true
+sn-store.workspace = true
+# --import-book routes with the one extension table the CLI keeps — the
+# document dispatch lives in sn-doc (bookdoc::DocFamily).
+sn-doc.workspace = true
+sn-tts.workspace = true
+sn-ui.workspace = true
+# bookdrop (sn_net), the chunker/sanitizer (sn_format), the JSON CLI I/O and
+# the tracing subscriber all reach into these crates from main.rs/selftest.rs.
+sn-net.workspace = true
+sn-format.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

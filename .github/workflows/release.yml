@@ -1,0 +1,92 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-4-dev libwebkit2gtk-6.0-dev libasound2-dev libglib2.0-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo check --workspace
+        env:
+          RUSTFLAGS: "--remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/src"
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Selftest
+        run: ./target/release/speechnotes --selftest
+
+      - name: Release build
+        run: cargo build --release
+        env:
+          # Panic locations must not embed builder-specific paths.
+          RUSTFLAGS: "--remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/src"
+
+      - name: Fetch bundled libraries
+        run: packaging/fetch-libs.sh
+
+      - name: Version
+        id: ver
+        run: |
+          V=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Source tarball
+        run: |
+          git archive --format=tar.gz \
+            -o "dist/speechnotes-${{ steps.ver.outputs.version }}-source.tar.gz" HEAD
+
+      - name: Binary tarball
+        run: packaging/build-tarball.sh "${{ steps.ver.outputs.version }}"
+
+      - name: .deb
+        run: packaging/build-deb.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz *.deb > SHA256SUMS
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.ver.outputs.version }}
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/SHA256SUMS
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          draft: true
+          prerelease: ${{ contains(steps.ver.outputs.version, 'alpha') || contains(steps.ver.outputs.version, 'beta') || contains(steps.ver.outputs.version, 'rc') }}
+          files: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/SHA256SUMS
