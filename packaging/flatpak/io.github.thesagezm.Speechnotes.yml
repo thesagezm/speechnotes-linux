@@ -1,6 +1,9 @@
 # Flatpak manifest for Speechnotes.
-# Build: flatpak-builder --force-clean --install --user build packaging/flatpak/io.github.thesagezm.Speechnotes.yml
+# Build:
+#   flatpak-builder --force-clean --install --user build packaging/flatpak/io.github.thesagezm.Speechnotes.yml
 # Run:   flatpak run io.github.thesagezm.Speechnotes
+# Bundle for distribution:
+#   flatpak build-bundle repo Speechnotes-<ver>-x86_64.flatpak io.github.thesagezm.Speechnotes
 #
 # Modules other than the app itself:
 #   - onnxruntime (loaded dynamically by the neural engines and RapidOCR)
@@ -8,16 +11,21 @@
 #   - espeak-ng (the built-in TTS engine + phoneme extraction)
 #   - ffmpeg (audio export; also the pomodoro chime fallback)
 #   - poppler (pdftoppm page rasterization for the OCR path)
-#   - tesseract (the OCR backend option)
+#   - leptonica + tesseract (the OCR backend option)
 #
-# The app's cargo sources come from Cargo.lock via flatpak-cargo-generator
-# (see packaging/flatpak/README.md). The deckcraft git dependency is pinned
-# by rev in Cargo.lock and included in the generated sources.
+# The onnxruntime source below is a local archive of the official 1.30.0
+# release layout (dist/flatpak-sources/) because downloads of the
+# github.com/microsoft org are unreachable from some networks. CI on GitHub
+# runners should replace the path source with the upstream URL:
+#   https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-linux-x64-1.30.0.tgz
+# (pin its sha256 there).
 
 app-id: io.github.thesagezm.Speechnotes
 runtime: org.gnome.Platform
 runtime-version: "48"
 sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable//24.08
 command: speechnotes
 finish-args:
   - --share=ipc
@@ -28,6 +36,8 @@ finish-args:
   - --share=network            # model downloads from HuggingFace on demand
   - --filesystem=home          # BookDrop import target + the library
   - --talk-name=org.freedesktop.portal.Desktop
+  - --env=ORT_DYLIB_PATH=/app/lib/libonnxruntime.so
+  - --env=SPEECHNOTES_PDFIUM_LIB=/app/lib/libpdfium.so
 cleanup:
   - /include
   - /lib/pkgconfig
@@ -39,20 +49,20 @@ modules:
   - name: onnxruntime
     buildsystem: simple
     build-commands:
-      - install -Dm644 lib/libonnxruntime.so %{_prefix}/lib/libonnxruntime.so
+      - install -Dm644 onnxruntime-linux-x64-1.30.0/lib/libonnxruntime.so ${FLATPAK_DEST}/lib/libonnxruntime.so
     sources:
       - type: archive
-        url: https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-linux-x64-1.30.0.tgz
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+        path: ../../dist/flatpak-sources/onnxruntime/onnxruntime-linux-x64-1.30.0.tar.gz
+        sha256: 26c0e8e3e044c12e51fad4decd507c241cfdb1f45fa4414756dee566aedb135d
 
   - name: pdfium
     buildsystem: simple
     build-commands:
-      - install -Dm644 lib/libpdfium.so %{_prefix}/lib/libpdfium.so
+      - install -Dm644 lib/libpdfium.so ${FLATPAK_DEST}/lib/libpdfium.so
     sources:
       - type: archive
-        url: https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7613/pdfium-linux-x64-libc++-tgz.tgz
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+        url: https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8165/pdfium-linux-x64.tgz
+        sha256: ba7865e16c0271daab75256790be06c26272190afe6e2a70eae0bb39bb99089c
 
   - name: espeak-ng
     buildsystem: autotools
@@ -60,8 +70,8 @@ modules:
       - --with-gradle=no
     sources:
       - type: archive
-        url: https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng-1.52.0.tar.gz
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+        url: https://github.com/espeak-ng/espeak-ng/archive/refs/tags/1.52.0.tar.gz
+        sha256: bb4338102ff3b49a81423da8a1a158b420124b055b60fa76cfb4b18677130a23
 
   - name: poppler
     buildsystem: cmake-ninja
@@ -70,51 +80,66 @@ modules:
       - -DBUILD_GTK_TESTS=OFF
       - -DBUILD_QT5_TESTS=OFF
       - -DBUILD_QT6_TESTS=OFF
+      - -DBUILD_CPP_TESTS=OFF
       - -DENABLE_GLIB=OFF
-      - -DENABLE_CPP=OFF
+      - -DENABLE_LIBOPENJPEG=none
     sources:
       - type: archive
         url: https://poppler.freedesktop.org/poppler-25.10.0.tar.xz
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+        sha256: 6b5e9bb64dabb15787a14db1675291c7afaf9387438cc93a4fb7f6aec4ee6fe0
 
   - name: ffmpeg
     config-opts:
       - --disable-doc
-      - --disable-programs
-      - --enable-ffmpeg
-      - --enable-ffplay=no
+      - --disable-ffplay
+      - --disable-ffprobe
       - --enable-shared
       - --disable-static
-      - --enable-gpl
+      - --disable-network
     sources:
       - type: archive
         url: https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+        sha256: 40973d44970dbc83ef302b0609f2e74982be2d85916dd2ee7472d30678a7abe6
 
-  - name: tesseract
-    buildsystem: autotools
+  - name: leptonica
+    buildsystem: cmake-ninja
     config-opts:
-      - --disable-openmp
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_PROG=OFF
     sources:
       - type: archive
-        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.0.tar.gz
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000  # REPLACE before building
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.85.0/leptonica-1.85.0.tar.gz
+        sha256: 3745ae3bf271a6801a2292eead83ac926e3a9bc1bf622e9cd4dd0f3786e17205
+
+  - name: tesseract
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_TRAINING_TOOLS=OFF
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.4.tar.gz
+        sha256: a8dbf8b8c8ee427ff6ad1d99116502feaf59440af1adb893caf60a6576826cf4
 
   - name: speechnotes
     buildsystem: simple
-    build-commands:
-      - cargo build --release --offline
-      - install -Dm755 target/release/speechnotes %{_prefix}/bin/speechnotes
-      - install -Dm644 packaging/io.github.thesagezm.Speechnotes.desktop %{_prefix}/share/applications/io.github.thesagezm.Speechnotes.desktop
-      - install -Dm644 packaging/io.github.thesagezm.Speechnotes.metainfo.xml %{_prefix}/share/metainfo/io.github.thesagezm.Speechnotes.metainfo.xml
-      - install -Dm644 packaging/man/speechnotes.1 %{_prefix}/share/man/man1/speechnotes.1
-      - for size in 128x128 256x256 512x512; do install -Dm644 assets/icons-src/$size/apps/speechnotes.png %{_prefix}/share/icons/hicolor/$size/apps/speechnotes.png; done
-      - install -Dm644 assets/icons-src/scalable/actions/*.svg -t %{_prefix}/share/icons/hicolor/scalable/actions/
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/speechnotes/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo build --offline --release
+      - install -Dm755 target/release/speechnotes ${FLATPAK_DEST}/bin/speechnotes
+      - install -Dm644 packaging/io.github.thesagezm.Speechnotes.desktop ${FLATPAK_DEST}/share/applications/io.github.thesagezm.Speechnotes.desktop
+      - install -Dm644 packaging/io.github.thesagezm.Speechnotes.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.thesagezm.Speechnotes.metainfo.xml
+      - install -Dm644 packaging/man/speechnotes.1 ${FLATPAK_DEST}/share/man/man1/speechnotes.1
+      - for size in 128x128 256x256 512x512; do install -Dm644 assets/icons-src/$size/apps/speechnotes.png ${FLATPAK_DEST}/share/icons/hicolor/$size/apps/speechnotes.png; done
+      - install -Dm644 assets/icons-src/scalable/actions/*.svg -t ${FLATPAK_DEST}/share/icons/hicolor/scalable/actions/
     sources:
-      - type: dir
-        path: ../..
-      # Cargo dependencies: generated JSON, see packaging/flatpak/README.md
-      #   flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
+      - type: git
+        url: https://github.com/thesagezm/speechnotes-linux.git
+        tag: v0.1.0-alpha.1
+      # Cargo dependencies vendored from Cargo.lock; see packaging/flatpak/README.md
       - cargo-sources.json
